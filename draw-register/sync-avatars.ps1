@@ -1,4 +1,4 @@
-# 头像一键同步脚本
+﻿# 头像一键同步脚本
 # 用法：照片只放到 backend\uploads\stuimg（命名 姓名-学号.扩展名），
 # 然后在 draw-register 目录执行：  ./sync-avatars.ps1
 # 脚本会把照片同步到 public\uploads\stuimg 并重建 avatars.json，
