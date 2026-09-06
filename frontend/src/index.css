@@ -1,0 +1,167 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* 阿里妈妈数黑体 Bold - 放在 frontend/public/fonts/AlimamaShuHeiTi-Bold.ttf 即可加载 */
+@font-face {
+  font-family: 'AlimamaShuHeiTi';
+  src: url('/fonts/AlimamaShuHeiTi-Bold.ttf') format('truetype');
+  font-weight: bold;
+  font-style: normal;
+  font-display: swap;
+}
+
+.font-ys-title {
+  font-family: 'AlimamaShuHeiTi', 'Microsoft YaHei', 'PingFang SC', sans-serif;
+}
+
+@layer base {
+  * {
+    box-sizing: border-box;
+  }
+
+  html,
+  body {
+    margin: 0;
+    width: 100%;
+    height: 100%;
+    font-family: 'AlimamaShuHeiTi', Arial, 'Microsoft YaHei', sans-serif;
+    color: #4b4b4b;
+    overflow: hidden;
+    background: #fff;
+  }
+
+  #root {
+    width: 100%;
+    height: 100%;
+  }
+}
+
+@layer components {
+  .page-bg {
+    /* background:
+      radial-gradient(circle at 52% 42%, rgba(255, 255, 255, 0.92), transparent 42%),
+      radial-gradient(circle at 12% 60%, rgba(253, 175, 200, 0.48), transparent 30%),
+      radial-gradient(circle at 84% 68%, rgba(142, 121, 199, 0.35), transparent 40%),
+      linear-gradient(105deg, #fff 0%, #fff8fa 46%, #faf6ff 100%); */
+    background: url('/bg.jpg') center center / cover no-repeat;
+  }
+
+  /* .page-bg::after {
+    content: '';
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 62px;
+    bottom: 0;
+    pointer-events: none;
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.35), transparent);
+    opacity: 0.7;
+  } */
+
+  /* FlipChar 翻页时钟样式 */
+  .flip-char {
+    display: inline-block;
+    vertical-align: baseline;
+    overflow: hidden;
+    position: relative;
+    width: 0.62em;
+    height: 1em;
+    line-height: 1;
+  }
+
+  .flip-layer {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    animation-duration: 420ms;
+    animation-timing-function: ease-in-out;
+    animation-fill-mode: forwards;
+    animation-iteration-count: 1;
+    animation-direction: normal;
+  }
+
+  /* 上层：从正常位置向上滑出，同时略透明 */
+  @keyframes flipTopOut {
+    0% {
+      transform: translateY(0);
+      opacity: 1;
+    }
+    100% {
+      transform: translateY(-100%);
+      opacity: 0.5;
+    }
+  }
+
+  /* 下层：从盒子下方（被 overflow-hidden 裁掉）滑入正常位置 */
+  @keyframes flipBottomIn {
+    0% {
+      transform: translateY(100%);
+      opacity: 1;
+    }
+    100% {
+      transform: translateY(0);
+      opacity: 1;
+    }
+  }
+
+  /* 无缝向左滚动：translateX(0) → translateX(-50%)，因内容复制了一份，滚完一半正好接上开头 */
+  @keyframes marqueeLeft {
+    0% {
+      transform: translateX(0);
+    }
+    100% {
+      transform: translateX(-50%);
+    }
+  }
+
+  /* 无缝向右滚动 */
+  @keyframes marqueeRight {
+    0% {
+      transform: translateX(-50%);
+    }
+    100% {
+      transform: translateX(0);
+    }
+  }
+
+  .marquee-left {
+    animation: marqueeLeft linear infinite;
+  }
+
+  .marquee-right {
+    animation: marqueeRight linear infinite;
+  }
+
+  /* 3D 透视容器：配合中奖卡片翻转 */
+  .perspective-1200 {
+    perspective: 1200px;
+  }
+
+  /* 中奖卡片翻牌动画：从侧立（rotateY 90°）翻转落定 */
+  @keyframes winnerFlipIn {
+    0% {
+      transform: rotateY(90deg) scale(0.5);
+      opacity: 0;
+    }
+    55% {
+      transform: rotateY(-14deg) scale(1.06);
+      opacity: 1;
+    }
+    75% {
+      transform: rotateY(6deg) scale(0.98);
+    }
+    100% {
+      transform: rotateY(0deg) scale(1);
+      opacity: 1;
+    }
+  }
+
+  .winner-flip {
+    transform-style: preserve-3d;
+    backface-visibility: hidden;
+    animation: winnerFlipIn 0.6s cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+}

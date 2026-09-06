@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>LOGO DESIGN / DESIGN EFFECT</title>
+<style>
+*{box-sizing:border-box}
+:root{
+  --ink:#4b4b4b;
+  --pink:#f3b5c9;
+  --blue:#7899dc;
+  --purple:#927dcc;
+  --yellow:#f5c75f;
+}
+html,body{margin:0;width:100%;height:100%;font-family:Arial,"Microsoft YaHei",sans-serif;color:var(--ink)}
+body{overflow:hidden;background:#fff}
+.page{
+  width:100vw;height:100vh;min-height:620px;position:relative;overflow:hidden;
+  background:
+    radial-gradient(circle at 52% 42%,rgba(255,255,255,.92),transparent 42%),
+    radial-gradient(circle at 12% 60%,rgba(255,213,226,.48),transparent 35%),
+    radial-gradient(circle at 84% 68%,rgba(222,210,255,.35),transparent 36%),
+    linear-gradient(105deg,#fff 0%,#fff8fa 46%,#faf6ff 100%);
+}
+.page:after{
+  content:"";position:absolute;inset:62px 0 0;pointer-events:none;
+  background:linear-gradient(90deg,transparent,rgba(255,255,255,.35),transparent);
+  opacity:.7
+}
+
+/* top bar */
+.top{
+  position:absolute;z-index:20;left:0;right:0;top:0;height:63px;
+  display:flex;align-items:center;padding:0 37px;
+  background:rgba(255,255,255,.78);border-bottom:1px solid #eee;
+}
+.top .left,.top .center,.top .right{
+  font-weight:800;font-style:italic;letter-spacing:.8px;font-size:17px
+}
+.top .center{position:absolute;left:50%;transform:translateX(-50%)}
+.top .right{margin-left:auto;font-size:16px}
+
+</style>
+</head>
+<body>
+<div class="page">
+
+  <header class="top">
+    <div class="left">LOGO DESIGN</div>
+    <div class="center">DESIGN/EFFECT</div>
+    <div class="right">2023/06</div>
+  </header>
+</body>
+</html>

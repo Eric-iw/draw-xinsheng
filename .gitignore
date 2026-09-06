@@ -1,0 +1,31 @@
+# ===== 依赖（不上传，Vercel 部署时自动安装）=====
+node_modules/
+
+# ===== Vercel 部署缓存与本地链接信息 =====
+.vercel/
+
+# ===== 环境变量（含数据库密码，禁止上传；Vercel 环境变量在控制台配置）=====
+.env
+.env.local
+.env.*.local
+.env.development
+.env.production
+
+# ===== 日志 =====
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# ===== 系统/编辑器临时文件 =====
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.zip
+test/
+*.sql
+sql/
+# 说明：public/uploads/stuimg/ 下的学生头像（.jpg/.png 等）属于必需素材，
+# 不在忽略范围内，必须随仓库上传；请勿添加 *.jpg 等全局扩展名规则。
