@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { api } from '@/services/api';
+import type { StudentDTO } from '@/services/api';
 
 const DEFAULT_AVATAR = '/avatar.png';
 
@@ -12,12 +13,18 @@ const RegisterPage: React.FC = () => {
   const [message, setMessage] = useState('');
   // stuimg 预置头像文件名清单：页面打开时拉取一次，之后在本地按 姓名-学号 即时匹配
   const [avatarFiles, setAvatarFiles] = useState<string[]>([]);
+  // 学生名册：页面打开时拉取一次，本地按 学号+姓名 双核验后显示班级
+  const [students, setStudents] = useState<StudentDTO[]>([]);
 
   useEffect(() => {
     api
       .getAvatarManifest()
       .then((d) => setAvatarFiles(d.files))
       .catch(() => setAvatarFiles([]));
+    api
+      .getStudents()
+      .then(setStudents)
+      .catch(() => setStudents([]));
   }, []);
 
   // 按 姓名-学号 在清单里即时匹配，无需网络请求；未匹配显示默认头像
@@ -28,6 +35,15 @@ const RegisterPage: React.FC = () => {
     const hit = avatarFiles.find((f) => f.startsWith(`${n}-${id}.`));
     return hit ? `/uploads/stuimg/${encodeURIComponent(hit)}` : DEFAULT_AVATAR;
   }, [avatarFiles, name, idNumber]);
+
+  // 班级：学号命中学生库且姓名完全一致才显示，防止重名/错填
+  const studentClass = useMemo(() => {
+    const n = name.trim();
+    const id = idNumber.trim();
+    if (!n || !id) return '';
+    const s = students.find((x) => x.id_number === id && x.name === n);
+    return s ? s.class : '';
+  }, [students, name, idNumber]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -65,13 +81,16 @@ const RegisterPage: React.FC = () => {
       >
         <h1 className="mb-6 text-center text-2xl font-bold text-gray-900">抽奖信息录入</h1>
 
-        {/* 头像：按 姓名-学号 实时匹配 stuimg 预置图，未匹配显示默认头像 */}
+        {/* 头像：按 姓名-学号 实时匹配 stuimg 预置图，未匹配显示默认头像；下方显示匹配到的班级 */}
         <div className="mb-6 flex flex-col items-center">
           <img
             src={avatar}
             alt="头像"
-            className="h-28 w-28 rounded-full object-cover ring-2 ring-gray-200"
+            className="h-28 w-28 rounded-full object-cover object-center ring-2 ring-gray-200"
           />
+          <div className="mt-3 flex h-6 items-center text-base font-semibold text-gray-700">
+            {studentClass}
+          </div>
         </div>
 
         {/* 姓名 */}
