@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { api } from '@/services/api';
 
 const DEFAULT_AVATAR = '/avatar.png';
@@ -10,31 +10,24 @@ const RegisterPage: React.FC = () => {
   const [idNumber, setIdNumber] = useState('');
   const [status, setStatus] = useState<Status>('idle');
   const [message, setMessage] = useState('');
-  // 实时匹配的头像预览：姓名学号与学生库一致且有预置图才显示，否则默认头像
-  const [avatar, setAvatar] = useState<string>(DEFAULT_AVATAR);
+  // stuimg 预置头像文件名清单：页面打开时拉取一次，之后在本地按 姓名-学号 即时匹配
+  const [avatarFiles, setAvatarFiles] = useState<string[]>([]);
 
-  // 姓名+学号填写后（300ms 防抖）实时查询匹配头像
   useEffect(() => {
+    api
+      .getAvatarManifest()
+      .then((d) => setAvatarFiles(d.files))
+      .catch(() => setAvatarFiles([]));
+  }, []);
+
+  // 按 姓名-学号 在清单里即时匹配，无需网络请求；未匹配显示默认头像
+  const avatar = useMemo(() => {
     const n = name.trim();
     const id = idNumber.trim();
-    if (!n || !id) {
-      setAvatar(DEFAULT_AVATAR);
-      return;
-    }
-    let cancelled = false;
-    const timer = window.setTimeout(async () => {
-      try {
-        const { avatar: matched } = await api.getStudentAvatar(n, id);
-        if (!cancelled) setAvatar(matched || DEFAULT_AVATAR);
-      } catch {
-        if (!cancelled) setAvatar(DEFAULT_AVATAR);
-      }
-    }, 300);
-    return () => {
-      cancelled = true;
-      window.clearTimeout(timer);
-    };
-  }, [name, idNumber]);
+    if (!n || !id) return DEFAULT_AVATAR;
+    const hit = avatarFiles.find((f) => f.startsWith(`${n}-${id}.`));
+    return hit ? `/uploads/stuimg/${encodeURIComponent(hit)}` : DEFAULT_AVATAR;
+  }, [avatarFiles, name, idNumber]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

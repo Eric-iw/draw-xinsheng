@@ -22,3 +22,14 @@ export function matchAvatar(name: string, idNumber: string): string | null {
 export function matchAvatarOrDefault(name: string, idNumber: string): string {
   return matchAvatar(name, idNumber) ?? '/avatar.png';
 }
+
+// 列出 stuimg 中全部预置头像文件名（供注册页一次性拉取后本地匹配，避免逐字查库）
+export function listAvatarFiles(): string[] {
+  try {
+    return fs
+      .readdirSync(STUIMG_DIR)
+      .filter((f) => AVATAR_EXTS.includes(path.extname(f).toLowerCase()));
+  } catch {
+    return [];
+  }
+}

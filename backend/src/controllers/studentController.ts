@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { studentService } from '../services/studentService';
-import { matchAvatar } from '../utils/avatar';
+import { matchAvatar, listAvatarFiles } from '../utils/avatar';
 
 const router = Router();
 
@@ -17,23 +17,10 @@ router.get('/', async (_req: Request, res: Response) => {
   }
 });
 
-// GET /api/students/avatar?name=&id_number= — 注册页实时匹配头像
-// 姓名学号与学生库一致才返回匹配到的预置头像（avatar 为 null 表示无图/不一致）
-router.get('/avatar', async (req: Request, res: Response) => {
-  try {
-    const name = String(req.query.name || '').trim();
-    const idNumber = String(req.query.id_number || '').trim();
-    let avatar: string | null = null;
-    if (name && idNumber) {
-      const student = await studentService.findByIdNumber(idNumber);
-      if (student && student.name === name) {
-        avatar = matchAvatar(name, idNumber);
-      }
-    }
-    res.json({ code: 0, data: { avatar } });
-  } catch (err) {
-    res.status(500).json({ code: 1, msg: (err as Error).message });
-  }
+// GET /api/students/avatar-manifest — stuimg 预置头像文件名清单
+// 注册页打开时拉取一次，之后在浏览器本地按 姓名-学号 即时匹配，不再逐字查库
+router.get('/avatar-manifest', (_req: Request, res: Response) => {
+  res.json({ code: 0, data: { files: listAvatarFiles() } });
 });
 
 // POST /api/students — 新增单个学生

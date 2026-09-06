@@ -132,11 +132,9 @@ export const api = {
 
   // 学生库（注册白名单）
   getStudents: () => request<StudentDTO[]>('/api/students'),
-  // 注册页实时匹配头像：姓名学号与学生库一致才返回预置头像，否则 avatar 为 null
-  getStudentAvatar: (name: string, id_number: string) =>
-    request<{ avatar: string | null }>(
-      `/api/students/avatar?name=${encodeURIComponent(name)}&id_number=${encodeURIComponent(id_number)}`
-    ),
+  // stuimg 预置头像文件名清单：注册页拉取一次后在本地按 姓名-学号 即时匹配
+  getAvatarManifest: () =>
+    request<{ files: string[] }>('/api/students/avatar-manifest'),
   createStudent: (data: { name: string; id_number: string; class?: string }) =>
     request<StudentDTO>('/api/students', {
       method: 'POST',
