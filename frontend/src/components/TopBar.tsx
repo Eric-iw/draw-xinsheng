@@ -96,8 +96,8 @@ export const TopBar: React.FC = () => {
         >
           <img src="/s.svg" alt="" draggable={false} className="h-7 w-7 brightness-0 invert" />
         </button>
-        <div className="absolute left-1/2 -translate-x-1/2 font-extrabold italic tracking-wide text-[17px] text-white drop-shadow-sm">
-          信息安全技术学院 ·  2027届新生抽奖系统
+        <div className="absolute left-1/2 -translate-x-1/2 font-extrabold italic tracking-wide text-[30px] text-white drop-shadow-sm">
+          信息安全技术学院 ·  2026级新生欢迎会
         </div>
         <div className="ml-auto font-extrabold italic tracking-wide text-[16px] tabular-nums text-white drop-shadow-sm">
           {Array.from(now).map((ch, i) => (
