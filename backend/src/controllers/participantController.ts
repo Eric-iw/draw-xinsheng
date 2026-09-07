@@ -77,6 +77,16 @@ router.post('/bulk', async (req: Request, res: Response) => {
   }
 });
 
+// DELETE /api/participants — 清空全部已录入信息
+router.delete('/', async (_req: Request, res: Response) => {
+  try {
+    const affected = await participantService.clearAll();
+    res.json({ code: 0, data: { affected } });
+  } catch (err) {
+    res.status(500).json({ code: 1, msg: (err as Error).message });
+  }
+});
+
 // DELETE /api/participants/:id
 router.delete('/:id', async (req: Request, res: Response) => {
   try {

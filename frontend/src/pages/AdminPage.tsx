@@ -106,6 +106,8 @@ const AdminPage: React.FC = () => {
   const [sId, setSId] = useState('');
   const [sClass, setSClass] = useState('');
   const [bulkText, setBulkText] = useState('');
+  const [studentSearch, setStudentSearch] = useState('');
+  const [participantSearch, setParticipantSearch] = useState('');
   const xlsxInputRef = useRef<HTMLInputElement | null>(null);
 
   // 学号单元格可能被 Excel 存为数字：安全整数直接转字符串，避免科学计数法
@@ -227,19 +229,58 @@ const AdminPage: React.FC = () => {
   };
 
   // ---------- 拟定中奖人表单 ----------
-  const [presetId, setPresetId] = useState('');
-  const addPreset = async () => {
-    if (!presetId.trim()) {
-      showTip(false, '请输入或选择学号');
-      return;
-    }
+  const [presetInput, setPresetInput] = useState('');
+  const [candidateStudents, setCandidateStudents] = useState<StudentDTO[] | null>(null);
+
+  const doAddPreset = async (id_number: string) => {
     try {
-      await api.addPreset(presetId.trim());
-      setPresetId('');
+      await api.addPreset(id_number);
+      setPresetInput('');
+      setCandidateStudents(null);
       showTip(true, '已加入拟定中奖人');
       loadPresets();
     } catch (e) {
       showTip(false, (e as Error).message);
+    }
+  };
+
+  const handleAddPreset = async () => {
+    const q = presetInput.trim();
+    if (!q) {
+      showTip(false, '请输入学号或姓名');
+      return;
+    }
+
+    // 1. 优先按姓名或学号精确匹配
+    const exactMatches = students.filter(
+      (s) => s.id_number.trim() === q || s.name.trim() === q
+    );
+
+    if (exactMatches.length === 1) {
+      // 唯一匹配，直接添加
+      await doAddPreset(exactMatches[0].id_number);
+      return;
+    }
+
+    if (exactMatches.length > 1) {
+      // 遇重名/多个匹配项，提示管理员手动审核选择
+      setCandidateStudents(exactMatches);
+      showTip(false, `找到 ${exactMatches.length} 位同名/同编号学生，请在下方手动审核选择`);
+      return;
+    }
+
+    // 2. 尝试模糊匹配（包含该姓名或学号）
+    const fuzzyMatches = students.filter(
+      (s) => s.name.includes(q) || s.id_number.includes(q)
+    );
+
+    if (fuzzyMatches.length === 1) {
+      await doAddPreset(fuzzyMatches[0].id_number);
+    } else if (fuzzyMatches.length > 1) {
+      setCandidateStudents(fuzzyMatches);
+      showTip(false, `找到 ${fuzzyMatches.length} 位匹配学生，请在下方手动审核选择`);
+    } else {
+      showTip(false, '学生库中未找到该姓名或学号的学生');
     }
   };
 
@@ -327,6 +368,17 @@ const AdminPage: React.FC = () => {
                   下载导入模板
                 </button>
                 <span className="text-xs text-gray-400">模板表头：姓名、学号、班级（列序不限，重复学号自动跳过）</span>
+                <button
+                  className={`${btnDanger} ml-auto`}
+                  onClick={async () => {
+                    if (!window.confirm('确定清空整个学生库？此操作不可恢复。')) return;
+                    await api.clearStudents();
+                    showTip(true, '学生库已清空');
+                    loadStudents();
+                  }}
+                >
+                  清空学生库
+                </button>
               </div>
 
               <details className="mb-5 rounded-md border border-gray-200 p-3">
@@ -346,11 +398,23 @@ const AdminPage: React.FC = () => {
 
               <StudentTable
                 students={students}
+                search={studentSearch}
+                onSearchChange={setStudentSearch}
                 registeredIds={new Set(participants.map((p) => p.id_number.trim()))}
                 onDelete={async (id) => {
                   await api.deleteStudent(id);
                   showTip(true, '已删除');
                   loadStudents();
+                }}
+                onAddPreset={async (id_number) => {
+                  await api.addPreset(id_number);
+                  showTip(true, '已加入拟定中奖人');
+                  loadPresets();
+                }}
+                onRegister={async (name, id_number) => {
+                  await api.createParticipant({ name, id_number });
+                  showTip(true, '已录入');
+                  loadParticipants();
                 }}
               />
             </div>
@@ -358,6 +422,42 @@ const AdminPage: React.FC = () => {
 
           {/* ============ 已录入信息 ============ */}
           {tab === 'participants' && (
+            <div>
+              <div className="mb-4 flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <input
+                    className={inputCls}
+                    value={participantSearch}
+                    onChange={(e) => setParticipantSearch(e.target.value)}
+                    placeholder="按姓名 / 学号 / 班级搜索已录入…"
+                  />
+                  <span className="text-sm text-gray-500">
+                    {participantSearch
+                      ? `匹配 ${
+                          participants.filter((p) => {
+                            const cls = classById.get(p.id_number.trim()) || '';
+                            return (
+                              p.name.includes(participantSearch) ||
+                              p.id_number.includes(participantSearch) ||
+                              cls.includes(participantSearch)
+                            );
+                          }).length
+                        } 条 / 共 ${participants.length} 条`
+                      : `共 ${participants.length} 人已录入`}
+                  </span>
+                </div>
+                <button
+                  className={btnDanger}
+                  onClick={async () => {
+                    if (!window.confirm('确定清空全部已录入信息？此操作不可恢复。')) return;
+                    await api.clearParticipants();
+                    showTip(true, '已清空全部录入信息');
+                    loadParticipants();
+                  }}
+                >
+                  清空已录入
+                </button>
+              </div>
             <table className="w-full text-left text-sm">
               <thead>
                 <tr className="border-b text-gray-500">
@@ -370,7 +470,17 @@ const AdminPage: React.FC = () => {
                 </tr>
               </thead>
               <tbody>
-                {participants.map((p) => (
+                {participants
+                  .filter((p) => {
+                    if (!participantSearch) return true;
+                    const cls = classById.get(p.id_number.trim()) || '';
+                    return (
+                      p.name.includes(participantSearch) ||
+                      p.id_number.includes(participantSearch) ||
+                      cls.includes(participantSearch)
+                    );
+                  })
+                  .map((p) => (
                   <tr key={p.id} className="border-b last:border-0">
                     <td className="py-2 pr-4">
                       <img src={p.avatar} alt="" className="h-9 w-9 rounded-full object-cover" />
@@ -393,11 +503,20 @@ const AdminPage: React.FC = () => {
                     </td>
                   </tr>
                 ))}
-                {participants.length === 0 && (
-                  <tr><td colSpan={6} className="py-8 text-center text-gray-400">暂无录入信息</td></tr>
+                {participants.filter((p) => {
+                  if (!participantSearch) return true;
+                  const cls = classById.get(p.id_number.trim()) || '';
+                  return (
+                    p.name.includes(participantSearch) ||
+                    p.id_number.includes(participantSearch) ||
+                    cls.includes(participantSearch)
+                  );
+                }).length === 0 && (
+                  <tr><td colSpan={6} className="py-8 text-center text-gray-400">{participants.length === 0 ? '暂无录入信息' : '无匹配结果'}</td></tr>
                 )}
               </tbody>
             </table>
+            </div>
           )}
 
           {/* ============ 已中奖名单 ============ */}
@@ -405,17 +524,37 @@ const AdminPage: React.FC = () => {
             <div>
               <div className="mb-4 flex items-center justify-between">
                 <span className="text-sm text-gray-500">共 {winners.length} 人已中奖</span>
-                <button
-                  className={btnDanger}
-                  onClick={async () => {
-                    if (!window.confirm('确定清空所有中奖记录？清空后这些学生可再次中奖。')) return;
-                    await api.clearWinners();
-                    showTip(true, '中奖记录已清空');
-                    loadWinners();
-                  }}
-                >
-                  清空中奖记录
-                </button>
+                <div className="flex gap-2">
+                  <button
+                    className={btnPrimary}
+                    onClick={() => {
+                      const rows = winners.map((w) => ({
+                        轮次: `第 ${w.round_no} 轮`,
+                        姓名: w.name,
+                        学号: w.id_number,
+                        班级: classById.get(w.id_number.trim()) || '',
+                        中奖时间: fmtTime(w.created_at),
+                      }));
+                      const ws = XLSX.utils.json_to_sheet(rows);
+                      const wb = XLSX.utils.book_new();
+                      XLSX.utils.book_append_sheet(wb, ws, '中奖名单');
+                      XLSX.writeFile(wb, '中奖名单.xlsx');
+                    }}
+                  >
+                    导出 Excel
+                  </button>
+                  <button
+                    className={btnDanger}
+                    onClick={async () => {
+                      if (!window.confirm('确定清空所有中奖记录？清空后这些学生可再次中奖。')) return;
+                      await api.clearWinners();
+                      showTip(true, '中奖记录已清空');
+                      loadWinners();
+                    }}
+                  >
+                    清空中奖记录
+                  </button>
+                </div>
               </div>
               <table className="w-full text-left text-sm">
                 <thead>
@@ -452,13 +591,15 @@ const AdminPage: React.FC = () => {
           {/* ============ 拟定中奖人 ============ */}
           {tab === 'preset' && (
             <div>
-              <div className="mb-5 flex flex-wrap items-center gap-3">
+              <div className="mb-4 flex flex-wrap items-center gap-3">
                 <select
                   className={inputCls}
                   value=""
-                  onChange={(e) => setPresetId(e.target.value)}
+                  onChange={(e) => {
+                    if (e.target.value) doAddPreset(e.target.value);
+                  }}
                 >
-                  <option value="">从已录入学生中选择…</option>
+                  <option value="">从已录入学生中快速选择…</option>
                   {eligibleParticipants.map((p) => (
                     <option key={p.id} value={p.id_number}>
                       {p.name}（{p.id_number}）
@@ -467,12 +608,18 @@ const AdminPage: React.FC = () => {
                 </select>
                 <input
                   className={inputCls}
-                  value={presetId}
-                  onChange={(e) => setPresetId(e.target.value)}
-                  placeholder="或直接输入学号"
+                  value={presetInput}
+                  onChange={(e) => {
+                    setPresetInput(e.target.value);
+                    if (candidateStudents) setCandidateStudents(null);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') handleAddPreset();
+                  }}
+                  placeholder="输入学号或姓名搜索添加…"
                 />
-                <button className={btnPrimary} onClick={addPreset}>
-                  添加拟定
+                <button className={btnPrimary} onClick={handleAddPreset}>
+                  搜索添加
                 </button>
                 <button
                   className={btnDanger}
@@ -483,9 +630,45 @@ const AdminPage: React.FC = () => {
                     loadPresets();
                   }}
                 >
-                  清空
+                  清空全部拟定
                 </button>
               </div>
+
+              {/* 遇到重名/多匹配项时的管理员审核选择卡片 */}
+              {candidateStudents && candidateStudents.length > 0 && (
+                <div className="mb-5 rounded-md border border-amber-300 bg-amber-50 p-4">
+                  <div className="mb-2 text-sm font-bold text-amber-800">
+                    检测到 {candidateStudents.length} 条匹配学生，请管理员审核确认拟定哪一位：
+                  </div>
+                  <div className="flex flex-wrap gap-3">
+                    {candidateStudents.map((s) => (
+                      <div
+                        key={s.id}
+                        className="flex items-center gap-3 rounded-lg border border-amber-200 bg-white px-4 py-2 shadow-sm"
+                      >
+                        <div>
+                          <span className="font-semibold text-gray-900">{s.name}</span>
+                          <span className="ml-2 text-xs tabular-nums text-gray-500">（学号: {s.id_number}）</span>
+                          {s.class && <span className="ml-2 text-xs text-gray-400">[{s.class}]</span>}
+                        </div>
+                        <button
+                          className="rounded bg-blue-600 px-3 py-1 text-xs font-semibold text-white hover:bg-blue-700"
+                          onClick={() => doAddPreset(s.id_number)}
+                        >
+                          选择此人
+                        </button>
+                      </div>
+                    ))}
+                    <button
+                      className="rounded border border-gray-300 bg-white px-3 py-1 text-xs text-gray-600 hover:bg-gray-100"
+                      onClick={() => setCandidateStudents(null)}
+                    >
+                      取消选择
+                    </button>
+                  </div>
+                </div>
+              )}
+
               <p className="mb-4 text-xs text-gray-400">
                 拟定的学生将在下一轮抽奖中优先中奖（须已录入信息且未中过奖）；抽奖后自动清除已中奖的拟定。
               </p>
@@ -544,62 +727,101 @@ const AdminPage: React.FC = () => {
 // 学生库表格（带是否已录入标记）
 const StudentTable: React.FC<{
   students: StudentDTO[];
+  search: string;
+  onSearchChange: (v: string) => void;
   registeredIds: Set<string>;
   onDelete: (id: number) => void;
-}> = ({ students, registeredIds, onDelete }) => (
-  <table className="w-full text-left text-sm">
-    <thead>
-      <tr className="border-b text-gray-500">
-        <th className="py-2 pr-4">头像</th>
-        <th className="py-2 pr-4">学号</th>
-        <th className="py-2 pr-4">姓名</th>
-        <th className="py-2 pr-4">班级</th>
-        <th className="py-2 pr-4">注册状态</th>
-        <th className="py-2">操作</th>
-      </tr>
-    </thead>
-    <tbody>
-      {students.map((s) => (
-        <tr key={s.id} className="border-b last:border-0">
-          <td className="py-2 pr-4">
-            {s.avatar ? (
-              <img
-                src={s.avatar}
-                alt={s.name}
-                title="stuimg 中已匹配到该学生的头像"
-                className="h-9 w-9 rounded-full object-cover"
-              />
-            ) : (
-              <span
-                title="uploads/stuimg 中没有该学生的图片（命名应为 姓名-学号.扩展名）"
-                className="flex h-9 w-9 items-center justify-center rounded-full bg-gray-200 text-xs text-gray-500"
-              >
-                无图
-              </span>
-            )}
-          </td>
-          <td className="py-2 pr-4 tabular-nums">{s.id_number}</td>
-          <td className="py-2 pr-4 font-semibold">{s.name}</td>
-          <td className="py-2 pr-4">{s.class || '—'}</td>
-          <td className="py-2 pr-4">
-            {registeredIds.has(s.id_number.trim()) ? (
-              <span className="text-green-600">已录入</span>
-            ) : (
-              <span className="text-gray-400">未录入</span>
-            )}
-          </td>
-          <td className="py-2">
-            <button className={btnDanger} onClick={() => onDelete(s.id)}>
-              删除
-            </button>
-          </td>
-        </tr>
-      ))}
-      {students.length === 0 && (
-        <tr><td colSpan={6} className="py-8 text-center text-gray-400">学生库为空，请先添加学生</td></tr>
-      )}
-    </tbody>
-  </table>
-);
+  onAddPreset: (id_number: string) => Promise<void>;
+  onRegister: (name: string, id_number: string) => Promise<void>;
+}> = ({ students, search, onSearchChange, registeredIds, onDelete, onAddPreset, onRegister }) => {
+  const filtered = students.filter(
+    (s) => !search || s.name.includes(search) || s.id_number.includes(search) || (s.class && s.class.includes(search))
+  );
+
+  return (
+    <div>
+      <div className="mb-4 flex items-center gap-3">
+        <input
+          className={inputCls}
+          value={search}
+          onChange={(e) => onSearchChange(e.target.value)}
+          placeholder="按姓名 / 学号 / 班级搜索学生库…"
+        />
+        <span className="text-sm text-gray-400">
+          {search ? `匹配 ${filtered.length} 条 / 共 ${students.length} 条` : `共 ${students.length} 条`}
+        </span>
+      </div>
+      <table className="w-full text-left text-sm">
+        <thead>
+          <tr className="border-b text-gray-500">
+            <th className="py-2 pr-4">头像</th>
+            <th className="py-2 pr-4">学号</th>
+            <th className="py-2 pr-4">姓名</th>
+            <th className="py-2 pr-4">班级</th>
+            <th className="py-2 pr-4">注册状态</th>
+            <th className="py-2">操作</th>
+          </tr>
+        </thead>
+        <tbody>
+          {filtered.map((s) => (
+            <tr key={s.id} className="border-b last:border-0">
+              <td className="py-2 pr-4">
+                {s.avatar ? (
+                  <img
+                    src={s.avatar}
+                    alt={s.name}
+                    title="stuimg 中已匹配到该学生的头像"
+                    className="h-9 w-9 rounded-full object-cover"
+                  />
+                ) : (
+                  <span
+                    title="uploads/stuimg 中没有该学生的图片（命名应为 姓名-学号.扩展名）"
+                    className="flex h-9 w-9 items-center justify-center rounded-full bg-gray-200 text-xs text-gray-500"
+                  >
+                    无图
+                  </span>
+                )}
+              </td>
+              <td className="py-2 pr-4 tabular-nums">{s.id_number}</td>
+              <td className="py-2 pr-4 font-semibold">{s.name}</td>
+              <td className="py-2 pr-4">{s.class || '—'}</td>
+              <td className="py-2 pr-4">
+                {registeredIds.has(s.id_number.trim()) ? (
+                  <span className="text-green-600">已录入</span>
+                ) : (
+                  <span className="text-gray-400">未录入</span>
+                )}
+              </td>
+              <td className="py-2">
+                <div className="flex items-center gap-2">
+                  {!registeredIds.has(s.id_number.trim()) && (
+                    <button
+                      className="rounded-md border border-blue-300 bg-blue-50 px-2.5 py-1 text-xs text-blue-700 hover:bg-blue-100 transition"
+                      onClick={() => onRegister(s.name, s.id_number)}
+                    >
+                      录入
+                    </button>
+                  )}
+                  <button
+                    className="rounded-md border border-amber-300 bg-amber-50 px-2.5 py-1 text-xs text-amber-700 hover:bg-amber-100 transition"
+                    onClick={() => onAddPreset(s.id_number)}
+                  >
+                    拟定
+                  </button>
+                  <button className={btnDanger} onClick={() => onDelete(s.id)}>
+                    删除
+                  </button>
+                </div>
+              </td>
+            </tr>
+          ))}
+          {filtered.length === 0 && (
+            <tr><td colSpan={6} className="py-8 text-center text-gray-400">{students.length === 0 ? '学生库为空，请先添加学生' : '无匹配结果'}</td></tr>
+          )}
+        </tbody>
+      </table>
+    </div>
+  );
+};
 
 export default AdminPage;

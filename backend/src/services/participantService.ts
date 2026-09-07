@@ -37,6 +37,11 @@ export const participantService = {
     return result.affectedRows > 0;
   },
 
+  async clearAll(): Promise<number> {
+    const [result] = await pool.query<ResultSetHeader>('DELETE FROM participants');
+    return result.affectedRows;
+  },
+
   async count(): Promise<number> {
     const [rows] = await pool.query<RowDataPacket[]>('SELECT COUNT(*) AS cnt FROM participants');
     return (rows[0] as { cnt: number }).cnt;

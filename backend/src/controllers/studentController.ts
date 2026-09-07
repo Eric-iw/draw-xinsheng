@@ -66,6 +66,16 @@ router.post('/bulk', async (req: Request, res: Response) => {
   }
 });
 
+// DELETE /api/students — 清空学生库
+router.delete('/', async (_req: Request, res: Response) => {
+  try {
+    const affected = await studentService.clearAll();
+    res.json({ code: 0, data: { affected } });
+  } catch (err) {
+    res.status(500).json({ code: 1, msg: (err as Error).message });
+  }
+});
+
 // DELETE /api/students/:id
 router.delete('/:id', async (req: Request, res: Response) => {
   try {

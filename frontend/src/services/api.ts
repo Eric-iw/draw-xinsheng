@@ -129,6 +129,8 @@ export const api = {
 
   deleteParticipant: (id: number) =>
     request<boolean>(`/api/participants/${id}`, { method: 'DELETE' }),
+  clearParticipants: () =>
+    request<{ affected: number }>('/api/participants', { method: 'DELETE' }),
 
   // 学生库（注册白名单）
   getStudents: () => request<StudentDTO[]>('/api/students'),
@@ -147,6 +149,8 @@ export const api = {
     }),
   deleteStudent: (id: number) =>
     request<boolean>(`/api/students/${id}`, { method: 'DELETE' }),
+  clearStudents: () =>
+    request<{ affected: number }>('/api/students', { method: 'DELETE' }),
 
   // 拟定中奖人
   getPreset: () => request<PresetDTO[]>('/api/preset'),

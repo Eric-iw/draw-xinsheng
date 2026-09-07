@@ -64,7 +64,7 @@ export const WinnerCard: React.FC<WinnerCardProps> = ({
         style={{ left: 161, top: 305, width: 151, height: 34 }}
       />
 
-      {/* 学号文字：位于底层卡片 (191, 310)，全站统一阿里妈妈数黑体 */}
+      {/* 学号文字：位于底层卡片 (191, 310) */}
       <div
         className="absolute whitespace-nowrap tabular-nums text-white"
         style={{
@@ -78,19 +78,19 @@ export const WinnerCard: React.FC<WinnerCardProps> = ({
         {idNumber}
       </div>
 
-      {/* 姓名：位于底层卡片 (131, 346) */}
+      {/* 姓名：水平居中 */}
       <div
-        className="font-ys-title absolute whitespace-nowrap text-white"
-        style={{ left: 131, top: 346, fontSize: 30, lineHeight: '34px' }}
+        className="font-ys-title absolute inset-x-0 whitespace-nowrap text-center text-white"
+        style={{ top: 346, fontSize: 30, lineHeight: '34px' }}
       >
         {name}
       </div>
 
-      {/* 班级：位于底层卡片 (69, 389) */}
+      {/* 班级：水平居中 */}
       {studentClass && (
         <div
-          className="font-ys-title absolute whitespace-nowrap text-white/85"
-          style={{ left: 69, top: 389, fontSize: 20, lineHeight: '24px' }}
+          className="font-ys-title absolute inset-x-0 whitespace-nowrap text-center text-white/85"
+          style={{ top: 389, fontSize: 20, lineHeight: '24px' }}
         >
           {studentClass}
         </div>

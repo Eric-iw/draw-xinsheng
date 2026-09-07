@@ -43,7 +43,7 @@ module.exports = async (req, res) => {
     );
     const student = rows[0];
     if (!student) {
-      res.status(403).json({ code: 1, msg: '学号不存在于学生库，无法注册，请联系管理员' });
+      res.status(403).json({ code: 1, msg: '学号不存在于学生库，无法录入，请联系管理员' });
       return;
     }
     if (student.name !== name) {
@@ -63,7 +63,7 @@ module.exports = async (req, res) => {
       });
     } catch (e) {
       if (e.code === 'ER_DUP_ENTRY') {
-        res.status(409).json({ code: 1, msg: '该学号已注册，请勿重复提交' });
+        res.status(409).json({ code: 1, msg: '该学号已录入，请勿重复提交' });
         return;
       }
       throw e;

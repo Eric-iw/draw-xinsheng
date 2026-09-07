@@ -27,5 +27,7 @@ Thumbs.db
 test/
 *.sql
 sql/
+bak/
+*.bat
 # 说明：public/uploads/stuimg/ 下的学生头像（.jpg/.png 等）属于必需素材，
 # 不在忽略范围内，必须随仓库上传；请勿添加 *.jpg 等全局扩展名规则。

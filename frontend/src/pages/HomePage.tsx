@@ -11,16 +11,22 @@ interface Participant {
   studentClass?: string;
 }
 
+interface DrawPayload {
+  drawn: Participant[];
+  roundNo: number;
+}
+
 const ROW_ROTATION = 'rotate-[3deg]';
 
 // 中奖揭晓布局：共 10 人，两行每行 5 张；第一张卡片位于页面 (74, 64)
 const WINNER_COUNT = 10;
 const WINNER_COLS = 5;
 const WINNER_ORIGIN_X = 74;
-const WINNER_ORIGIN_Y = 64;
+const WINNER_ORIGIN_Y = 100;
 const WINNER_GAP_X = 39; // 卡片水平间距
 const WINNER_GAP_Y = 16; // 上下行间距
 const WINNER_STAGGER_MS = 110; // 卡片逐个翻牌间隔（稍快）
+const MAX_ROUNDS = 3; // 抽奖总轮次
 
 function chunk<T>(arr: T[], size: number): T[][] {
   const rows: T[][] = [];
@@ -35,20 +41,31 @@ export const HomePage: React.FC = () => {
   const [participants, setParticipants] = useState<Participant[]>([]);
   // 已中奖学号集合：跑马灯池排除这些人，已中奖不允许再次中奖
   const [wonIds, setWonIds] = useState<Set<string>>(new Set());
+  // 当前已完成的抽奖轮次（以后端 winners 表轮次号为准，清空后归零）
+  const [currentRound, setCurrentRound] = useState(0);
 
-  // 从后端加载参与者 + 已中奖名单（各自容错，互不影响轮询）
+  // 抽奖流程状态镜像：轮询回调里据此判断能否同步轮次
+  const lotteryStateRef = useRef<'slow' | 'fast' | 'video'>('slow');
+
+  // 从后端加载参与者 + 已中奖名单 + 当前轮次（各自容错，互不影响轮询）
   const loadData = useCallback(async () => {
-    const [list, winnerList] = await Promise.all([
+    const [list, winnerList, round] = await Promise.all([
       api.getParticipants().catch((err) => {
         console.warn('[HomePage] 加载参与者失败:', err);
         return [] as ParticipantDTO[];
       }),
       api.getWinners().catch(() => [] as WinnerDTO[]),
+      api.getCurrentRound().catch(() => 0),
     ]);
     setParticipants(
       list.map((p) => ({ avatar: p.avatar, name: p.name, idNumber: p.id_number }))
     );
     setWonIds(new Set(winnerList.map((w) => w.id_number.trim())));
+    // 仅在首页（slow）同步后端轮次：抽奖进行中该请求可能发出于本轮写入之前，
+    // 拿到旧轮次号会覆盖 applyDraw 设置的值，导致顶部轮次显示错乱
+    if (lotteryStateRef.current === 'slow') {
+      setCurrentRound(round);
+    }
   }, []);
 
   useEffect(() => {
@@ -57,7 +74,7 @@ export const HomePage: React.FC = () => {
     return () => window.clearInterval(timer);
   }, [loadData]);
 
-  // 待中奖池：已注册且未中奖
+  // 待中奖池：已录入且未中奖
   const pool = useMemo(
     () => participants.filter((p) => !wonIds.has(p.idNumber.trim())),
     [participants, wonIds]
@@ -66,6 +83,9 @@ export const HomePage: React.FC = () => {
 
   // slow → fast（3s 自动）→ video（第 8 秒翻牌揭晓，视频继续播完定格）→ slow（空格）
   const [lotteryState, setLotteryState] = useState<'slow' | 'fast' | 'video'>('slow');
+  useEffect(() => {
+    lotteryStateRef.current = lotteryState;
+  }, [lotteryState]);
   // 中奖者（共 10 人）：进入 video 阶段时抽出；revealed：视频播放到第 8 秒后才允许揭晓
   const [winners, setWinners] = useState<Participant[]>([]);
   const [revealed, setRevealed] = useState(false);
@@ -73,6 +93,12 @@ export const HomePage: React.FC = () => {
   const fastTimerRef = useRef<number | null>(null);
   const revealedRef = useRef(false);
   const drawingRef = useRef(false); // 防止一次抽奖重复请求
+  // 清场过渡：本轮卡片翻走后再进入下一轮
+  const [exiting, setExiting] = useState(false);
+  const exitTimerRef = useRef<number | null>(null);
+  // 轮间切换提前请求的结果缓存：清场动画结束时立刻应用，不用等网络
+  const pendingDrawRef = useRef<DrawPayload | null>(null);
+  const exitDoneRef = useRef(false); // 清场动画是否已结束（供慢请求回来后补应用）
 
   // 视频播放到第 8 秒（媒体真实进度）触发一次揭晓，不用定时器猜测
   const REVEAL_SECOND = 8;
@@ -84,61 +110,130 @@ export const HomePage: React.FC = () => {
     }
   }, []);
 
-  // 空格键：slow → fast；video 时（含已揭晓）→ slow 并重置
+  // 只发起抽奖请求并返回结果（不写状态），供轮间切换提前预取
+  const performDraw = useCallback(async (): Promise<DrawPayload | null> => {
+    if (drawingRef.current) return null;
+    drawingRef.current = true;
+    try {
+      const result = await api.drawWinners(WINNER_COUNT);
+      const drawn: Participant[] = result.winners.map((w) => ({
+        avatar: w.avatar,
+        name: w.name,
+        idNumber: w.id_number,
+        studentClass: w.class || '',
+      }));
+      return { drawn, roundNo: result.round_no };
+    } catch (err) {
+      console.warn('[HomePage] 抽奖失败:', err);
+      return null;
+    } finally {
+      drawingRef.current = false;
+    }
+  }, []);
+
+  // 把一轮抽奖结果写入页面状态（中奖卡片 / 轮次 / 已中奖池）
+  const applyDraw = useCallback((payload: DrawPayload | null) => {
+    const drawn = payload ? payload.drawn : [];
+    setWinners(drawn);
+    if (payload && payload.roundNo > 0) setCurrentRound(payload.roundNo);
+    // 立即从待中奖池移除本轮中奖者（等下一次轮询也会同步）
+    setWonIds((prev) => {
+      const next = new Set(prev);
+      drawn.forEach((d) => next.add(d.idNumber.trim()));
+      return next;
+    });
+  }, []);
+
+  const drawRound = useCallback(async () => {
+    applyDraw(await performDraw());
+  }, [performDraw, applyDraw]);
+
+  // 回到首页（跑马灯）并复位所有展示状态
+  const goHome = useCallback(() => {
+    if (exitTimerRef.current !== null) {
+      window.clearTimeout(exitTimerRef.current);
+      exitTimerRef.current = null;
+    }
+    exitDoneRef.current = true;
+    pendingDrawRef.current = null;
+    setExiting(false);
+    setLotteryState('slow');
+    revealedRef.current = false;
+    setRevealed(false);
+    setWinners([]);
+  }, []);
+
+  // 顶部栏"清空抽奖记录"：清空后端中奖记录与轮次，本地立即复位
+  const handleResetDraw = useCallback(async () => {
+    if (!window.confirm('确定清空全部中奖记录并重置轮次吗？此操作不可恢复。')) return;
+    try {
+      await api.clearWinners();
+    } catch (err) {
+      console.warn('[HomePage] 清空中奖记录失败:', err);
+    }
+    drawingRef.current = false;
+    setCurrentRound(0);
+    setWonIds(new Set());
+    goHome();
+  }, [goHome]);
+
+  // 空格键：slow → fast（共三轮，三轮后空格不再开启新一轮）；
+  // video 已揭晓且未满三轮 → 清场动画后直接进入下一轮（不再重播视频）；第三轮结束 → slow 回首页
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.code !== 'Space') return;
       e.preventDefault();
       if (lotteryState === 'slow') {
+        if (currentRound >= MAX_ROUNDS) return; // 三轮已抽完，停留首页
         setLotteryState('fast');
       } else if (lotteryState === 'video') {
-        setLotteryState('slow');
-        revealedRef.current = false;
-        setRevealed(false);
-        setWinners([]);
+        if (!revealed || currentRound >= MAX_ROUNDS) {
+          // 视频未播到揭晓（中途退出）或第三轮已揭晓 → 回首页
+          goHome();
+        } else if (winners.length > 0) {
+          // 轮间切换：不进首页。立即定格视频并提前发起下一轮抽奖，
+          // 清场动画一结束卡片立刻翻牌，不再等待网络往返
+          if (exitTimerRef.current !== null) return; // 清场进行中，忽略重复按键
+          videoRef.current?.pause();
+          pendingDrawRef.current = null;
+          exitDoneRef.current = false;
+          setExiting(true);
+          exitTimerRef.current = window.setTimeout(() => {
+            exitTimerRef.current = null;
+            exitDoneRef.current = true;
+            setExiting(false);
+            setWinners([]);
+            revealedRef.current = false;
+            setRevealed(true); // 后续轮次不播视频：门闩直接打开
+            const pending = pendingDrawRef.current;
+            if (pending !== null) applyDraw(pending);
+            // pending 仍为 null 表示请求较慢，返回后由 exitDoneRef 检查补应用
+          }, 500);
+          void performDraw().then((p) => {
+            pendingDrawRef.current = p;
+            if (exitDoneRef.current) applyDraw(p); // 动画已结束则立即应用
+          });
+        }
       }
       // fast 时忽略空格，等 3s 自动
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [lotteryState]);
+  }, [lotteryState, currentRound, revealed, winners, performDraw, applyDraw, goHome]);
 
-  // fast 结束后调后端抽奖接口（已中奖排除、拟定优先），再进入 video 阶段
+  // fast 结束后调后端抽奖接口，再进入 video 阶段
   useEffect(() => {
     if (lotteryState !== 'fast') return;
-    fastTimerRef.current = window.setTimeout(async () => {
-      if (drawingRef.current) return;
-      drawingRef.current = true;
-      try {
-        const result = await api.drawWinners(WINNER_COUNT);
-        const drawn: Participant[] = result.winners.map((w) => ({
-          avatar: w.avatar,
-          name: w.name,
-          idNumber: w.id_number,
-          studentClass: w.class || '',
-        }));
-        setWinners(drawn);
-        // 立即从待中奖池移除本轮中奖者（等下一次轮询也会同步）
-        setWonIds((prev) => {
-          const next = new Set(prev);
-          drawn.forEach((d) => next.add(d.idNumber.trim()));
-          return next;
-        });
-      } catch (err) {
-        console.warn('[HomePage] 抽奖失败:', err);
-        setWinners([]);
-      } finally {
-        drawingRef.current = false;
-        setLotteryState('video');
-      }
-    }, 2000);
+    fastTimerRef.current = window.setTimeout(() => {
+      void drawRound().finally(() => setLotteryState('video'));
+    }, 1500);
     return () => {
       if (fastTimerRef.current !== null) {
         window.clearTimeout(fastTimerRef.current);
         fastTimerRef.current = null;
       }
     };
-  }, [lotteryState]);
+  }, [lotteryState, drawRound]);
 
   // 进入 video 时复位揭晓门闩并自动播放
   useEffect(() => {
@@ -161,7 +256,7 @@ export const HomePage: React.FC = () => {
   }, [lotteryState]);
 
   return (
-    <PageLayout hideTopBar={lotteryState === 'video'}>
+    <PageLayout hideTopBar={lotteryState === 'video'} onResetDraw={handleResetDraw}>
       <div className="flex h-full w-full flex-col justify-start gap-10 px-0 pt-[80px]">
         {rows.map((row, rowIdx) => {
           const direction = rowIdx % 2 === 0 ? 'marquee-left' : 'marquee-right';
@@ -202,6 +297,17 @@ export const HomePage: React.FC = () => {
         />
       )}
 
+      {/* 轮次标题：视频第 8 秒随揭晓出现，显示"第 X 轮抽奖"；清场时随卡片一同消失 */}
+      {lotteryState === 'video' && revealed && !exiting && winners.length > 0 && (
+        <div className="pointer-events-none fixed inset-x-0 top-[20px] z-[120] flex items-center justify-center gap-[20px]">
+          <img src="/xian.png" alt="" className="h-[20px] w-auto" />
+          <div className="font-ys-title text-[36px] leading-[42px] tracking-[6px] text-white drop-shadow-[0_2px_10px_rgba(0,0,0,0.65)]">
+            第 {currentRound} 轮抽奖
+          </div>
+          <img src="/xian.png" alt="" className="h-[20px] w-auto -scale-x-100" />
+        </div>
+      )}
+
       {/* 中奖者揭晓层：视频第 8 秒渲染，10 张卡片两行（每行 5 张）逐个翻牌出现 */}
       {lotteryState === 'video' && revealed && winners.length > 0 && (
         <div
@@ -217,12 +323,12 @@ export const HomePage: React.FC = () => {
           {winners.map((w, i) => (
             <WinnerCard
               key={`${w.idNumber}-${w.name}`}
-              className="winner-flip"
+              className={exiting ? 'winner-flip-out' : 'winner-flip'}
               avatar={w.avatar}
               name={w.name}
               idNumber={w.idNumber}
               studentClass={w.studentClass}
-              style={{ animationDelay: `${i * WINNER_STAGGER_MS}ms` }}
+              style={exiting ? undefined : { animationDelay: `${i * WINNER_STAGGER_MS}ms` }}
             />
           ))}
         </div>

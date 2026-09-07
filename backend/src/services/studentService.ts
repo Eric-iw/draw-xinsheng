@@ -45,4 +45,9 @@ export const studentService = {
     const [result] = await pool.query<ResultSetHeader>('DELETE FROM students WHERE id = ?', [id]);
     return result.affectedRows > 0;
   },
+
+  async clearAll(): Promise<number> {
+    const [result] = await pool.query<ResultSetHeader>('DELETE FROM students');
+    return result.affectedRows;
+  },
 };

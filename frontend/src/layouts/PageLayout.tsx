@@ -4,9 +4,14 @@ import TopBar from '@/components/TopBar';
 interface PageLayoutProps {
   children?: React.ReactNode;
   hideTopBar?: boolean;
+  /** 传入后在顶部栏显示"清空抽奖记录"按钮（仅大屏首页使用） */
+  onResetDraw?: () => void;
 }
 
-export const PageLayout: React.FC<PageLayoutProps> = ({ children, hideTopBar = false }) => {
+export const PageLayout: React.FC<PageLayoutProps> = ({
+  children,
+  hideTopBar = false,
+}) => {
   return (
     <div className="page relative w-screen h-screen min-h-[620px] overflow-hidden page-bg">
       {/* 居中 logo 背景层，置于底层，透明度 50% */}

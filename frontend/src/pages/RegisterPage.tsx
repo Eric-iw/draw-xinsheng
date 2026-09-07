@@ -63,13 +63,13 @@ const RegisterPage: React.FC = () => {
       // 头像由管理员预置（按 姓名-学号 匹配），注册时只提交姓名和学号
       await api.createParticipant({ name: trimmedName, id_number: trimmedId });
       setStatus('success');
-      setMessage('注册成功！请等待抽奖');
+      setMessage('录入成功！请等待抽奖');
       // 重置表单，方便下一位同学注册
       setName('');
       setIdNumber('');
     } catch (err) {
       setStatus('error');
-      setMessage((err as Error).message || '注册失败，请重试');
+      setMessage((err as Error).message || '录入失败，请重试');
     }
   };
 
@@ -136,7 +136,7 @@ const RegisterPage: React.FC = () => {
           disabled={status === 'submitting'}
           className="w-full rounded-lg bg-[#3A6085] py-2.5 font-semibold text-white transition hover:bg-[#2f5070] disabled:opacity-60"
         >
-          {status === 'submitting' ? '提交中…' : '确认注册'}
+          {status === 'submitting' ? '提交中…' : '确认录入'}
         </button>
       </form>
     </div>

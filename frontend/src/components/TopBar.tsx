@@ -66,6 +66,8 @@ const FlipChar: React.FC<{ char: string }> = ({ char }) => {
   );
 };
 
+
+
 export const TopBar: React.FC = () => {
   const [now, setNow] = useState<string>(() => formatDateTime(new Date()));
   const [showQR, setShowQR] = useState(false);
