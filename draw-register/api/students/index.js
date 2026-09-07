@@ -1,4 +1,4 @@
-// Vercel Serverless：学生名册（注册页拉取一次后在本地按 姓名+学号 匹配班级）
+// Vercel Serverless：学生名册（录入页拉取一次后在本地按 姓名+学号 匹配班级）
 // GET /api/students
 const mysql = require('mysql2/promise');
 

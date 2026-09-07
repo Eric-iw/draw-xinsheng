@@ -18,12 +18,12 @@ export function matchAvatar(name: string, idNumber: string): string | null {
   return null;
 }
 
-// 注册用：未匹配到预置头像时回退默认头像
+// 录入用：未匹配到预置头像时回退默认头像
 export function matchAvatarOrDefault(name: string, idNumber: string): string {
   return matchAvatar(name, idNumber) ?? '/avatar.png';
 }
 
-// 列出 stuimg 中全部预置头像文件名（供注册页一次性拉取后本地匹配，避免逐字查库）
+// 列出 stuimg 中全部预置头像文件名（供录入页一次性拉取后本地匹配，避免逐字查库）
 export function listAvatarFiles(): string[] {
   try {
     return fs

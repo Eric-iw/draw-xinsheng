@@ -25,7 +25,7 @@ export interface WinnerDTO {
   created_at: string;
 }
 
-// 学生库（注册白名单）
+// 学生库（录入白名单）
 export interface StudentDTO {
   id: number;
   name: string;
@@ -100,7 +100,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 export const api = {
   getParticipants: () => request<ParticipantDTO[]>('/api/participants'),
-  // 头像由管理员预置在 uploads/stuimg（命名 姓名-学号），注册时只提交姓名和学号
+  // 头像由管理员预置在 uploads/stuimg（命名 姓名-学号），录入时只提交姓名和学号
   createParticipant: (data: { name: string; id_number: string }) =>
     request<ParticipantDTO>('/api/participants', {
       method: 'POST',
@@ -132,9 +132,9 @@ export const api = {
   clearParticipants: () =>
     request<{ affected: number }>('/api/participants', { method: 'DELETE' }),
 
-  // 学生库（注册白名单）
+  // 学生库（录入白名单）
   getStudents: () => request<StudentDTO[]>('/api/students'),
-  // stuimg 预置头像文件名清单：注册页拉取一次后在本地按 姓名-学号 即时匹配
+  // stuimg 预置头像文件名清单：录入页拉取一次后在本地按 姓名-学号 即时匹配
   getAvatarManifest: () =>
     request<{ files: string[] }>('/api/students/avatar-manifest'),
   createStudent: (data: { name: string; id_number: string; class?: string }) =>

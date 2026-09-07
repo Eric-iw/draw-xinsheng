@@ -758,7 +758,7 @@ const StudentTable: React.FC<{
             <th className="py-2 pr-4">学号</th>
             <th className="py-2 pr-4">姓名</th>
             <th className="py-2 pr-4">班级</th>
-            <th className="py-2 pr-4">注册状态</th>
+            <th className="py-2 pr-4">录入状态</th>
             <th className="py-2">操作</th>
           </tr>
         </thead>

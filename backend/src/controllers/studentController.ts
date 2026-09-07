@@ -18,7 +18,7 @@ router.get('/', async (_req: Request, res: Response) => {
 });
 
 // GET /api/students/avatar-manifest — stuimg 预置头像文件名清单
-// 注册页打开时拉取一次，之后在浏览器本地按 姓名-学号 即时匹配，不再逐字查库
+// 录入页打开时拉取一次，之后在浏览器本地按 姓名-学号 即时匹配，不再逐字查库
 router.get('/avatar-manifest', (_req: Request, res: Response) => {
   res.json({ code: 0, data: { files: listAvatarFiles() } });
 });

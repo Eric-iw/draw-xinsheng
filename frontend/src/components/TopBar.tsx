@@ -81,7 +81,7 @@ export const TopBar: React.FC = () => {
     return () => window.clearInterval(id);
   }, [tick]);
 
-  // 二维码指向注册页：优先用配置的公网/局域网地址（VITE_PUBLIC_ORIGIN），否则取当前访问地址
+  // 二维码指向录入页：优先用配置的公网/局域网地址（VITE_PUBLIC_ORIGIN），否则取当前访问地址
   const publicOrigin =
     (import.meta.env.VITE_PUBLIC_ORIGIN as string | undefined) || window.location.origin;
   const registerUrl = `${publicOrigin.replace(/\/$/, '')}/register`;
@@ -89,7 +89,7 @@ export const TopBar: React.FC = () => {
   return (
     <>
       <header className="absolute z-20 left-0 right-0 top-0 h-[63px] flex items-center px-[37px] bg-[url('/bg.jpg')] bg-center bg-cover">
-        {/* 左侧：扫码注册按钮（s.svg 图标，深色图标反白显示） */}
+        {/* 左侧：扫码录入按钮（s.svg 图标，深色图标反白显示） */}
         <button
           type="button"
           aria-label="扫码录入"
@@ -108,7 +108,7 @@ export const TopBar: React.FC = () => {
         </div>
       </header>
 
-      {/* 二维码弹窗：扫码进入注册页 */}
+      {/* 二维码弹窗：扫码进入录入页 */}
       {showQR && (
         <div
           className="fixed inset-0 z-[300] flex items-center justify-center bg-black/60"

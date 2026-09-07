@@ -60,11 +60,11 @@ const RegisterPage: React.FC = () => {
     setStatus('submitting');
     setMessage('');
     try {
-      // 头像由管理员预置（按 姓名-学号 匹配），注册时只提交姓名和学号
+      // 头像由管理员预置（按 姓名-学号 匹配），录入时只提交姓名和学号
       await api.createParticipant({ name: trimmedName, id_number: trimmedId });
       setStatus('success');
       setMessage('录入成功！请等待抽奖');
-      // 重置表单，方便下一位同学注册
+      // 重置表单，方便下一位同学录入
       setName('');
       setIdNumber('');
     } catch (err) {

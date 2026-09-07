@@ -1,4 +1,4 @@
-// Vercel Serverless：学生注册
+// Vercel Serverless：学生录入
 // 校验规则与本地后端一致：学号必须在学生库 + 姓名匹配 + 学号不可重复
 // 头像按 姓名-学号 匹配 public/uploads/stuimg 中的预置照片（见 avatars.json）
 const mysql = require('mysql2/promise');

@@ -21,7 +21,7 @@ function shuffle<T>(arr: T[]): T[] {
 
 export const winnerService = {
   /**
-   * 抽奖：已注册且未中奖的参与者中抽取 count 人。
+   * 抽奖：已录入且未中奖的参与者中抽取 count 人。
    * - 拟定中奖人（preset_winners）优先且按拟定顺序
    * - 剩余名额从可抽取池中随机补齐
    * - 已中奖者不会再次中奖（LEFT JOIN winners 过滤）
@@ -32,7 +32,7 @@ export const winnerService = {
     try {
       await conn.beginTransaction();
 
-      // 可抽取池：已注册（participants）且未中奖
+      // 可抽取池：已录入（participants）且未中奖
       const [eligibleRows] = await conn.query<RowDataPacket[]>(
         `SELECT p.id, p.name, p.id_number, p.avatar, s.class AS class
          FROM participants p

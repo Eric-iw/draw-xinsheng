@@ -25,7 +25,7 @@ router.get('/count', async (_req: Request, res: Response) => {
   }
 });
 
-// POST /api/participants — 注册（校验：学号必须在学生库且姓名匹配）
+// POST /api/participants — 录入（校验：学号必须在学生库且姓名匹配）
 router.post('/', async (req: Request, res: Response) => {
   try {
     const name = String(req.body.name || '').trim();
@@ -37,7 +37,7 @@ router.post('/', async (req: Request, res: Response) => {
     // 学生库白名单校验：学号必须存在，且姓名与学号绑定一致（防乱填/重名顶替）
     const student = await studentService.findByIdNumber(id_number);
     if (!student) {
-      res.status(403).json({ code: 1, msg: '学号不存在于学生库，无法注册，请联系管理员' });
+      res.status(403).json({ code: 1, msg: '学号不存在于学生库，无法录入，请联系管理员' });
       return;
     }
     if (student.name !== name) {
@@ -53,7 +53,7 @@ router.post('/', async (req: Request, res: Response) => {
   } catch (err) {
     // 学号唯一约束冲突（ER_DUP_ENTRY）
     if ((err as { code?: string }).code === 'ER_DUP_ENTRY') {
-      res.status(409).json({ code: 1, msg: '该学号已注册，请勿重复提交' });
+      res.status(409).json({ code: 1, msg: '该学号已录入，请勿重复提交' });
       return;
     }
     res.status(500).json({ code: 1, msg: (err as Error).message });

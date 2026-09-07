@@ -17,7 +17,7 @@ export interface Winner {
   created_at: Date;
 }
 
-// 学生库（注册白名单）
+// 学生库（录入白名单）
 export interface Student {
   id: number;
   name: string;
