@@ -120,12 +120,17 @@ export const winnerService = {
     return rows as Winner[];
   },
 
+  /**
+   * 当前已完成的轮次数 = winners 表中最大轮次号（空表为 0）。
+   * 与 draw() 返回的 round_no 语义保持一致：都表示"已完成到第几轮"。
+   * 下一轮号 = getCurrentRound() + 1。
+   */
   async getCurrentRound(): Promise<number> {
     const [rows] = await pool.query<RowDataPacket[]>(
       'SELECT MAX(round_no) AS max FROM winners'
     );
     const max = (rows[0] as { max: number | null }).max;
-    return (max ?? 0) + 1;
+    return max ?? 0;
   },
 
   async recordWinner(data: Omit<Winner, 'id' | 'created_at'>): Promise<Winner> {

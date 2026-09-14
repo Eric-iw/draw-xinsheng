@@ -3,6 +3,16 @@ import PageLayout from '@/layouts/PageLayout';
 import WinnerCard, { CARD_WIDTH } from '@/components/WinnerCard';
 import StudentMarqueeWall from '@/components/StudentMarqueeWall';
 import { api, ParticipantDTO, WinnerDTO } from '@/services/api';
+import {
+  safeGet,
+  safeSet,
+  safeRemove,
+  TESTDATA_ENABLED_KEY,
+  TESTDATA_LIST_KEY,
+  TESTDATA_ROUND_KEY,
+  TESTDATA_WON_KEY,
+} from '@/utils/storage';
+import { generateTestStudents } from '@/utils/testData';
 
 interface Participant {
   avatar: string;
@@ -26,13 +36,27 @@ const WINNER_GAP_Y = 16;
 const WINNER_STAGGER_MS = 110;
 
 export const HomePage: React.FC = () => {
-  // ---------- 跑马灯（TODO：按示例图重写）----------
+  // ---------- 跑马灯 ----------
   const [participants, setParticipants] = useState<Participant[]>([]);
+  const participantsRef = useRef<Participant[]>([]);
+  participantsRef.current = participants;
   const [wonIds, setWonIds] = useState<Set<string>>(new Set());
 
   // ---------- 抽奖状态 ----------
   const [currentRound, setCurrentRound] = useState(0);
   const [maxRounds, setMaxRounds] = useState(3); // 从后端配置读取，默认 3
+  // 测试模式：支持 ?test=1 快捷开启（兼容 Chrome 下 sandbox / 跨源 localStorage 问题）
+  const [testDataOn, setTestDataOn] = useState<boolean>(() => {
+    if (new URLSearchParams(window.location.search).get('test') === '1') return true;
+    return safeGet(TESTDATA_ENABLED_KEY) === '1';
+  });
+  const testDataOnRef = useRef(testDataOn);
+  testDataOnRef.current = testDataOn;
+  // 测试模式本地抽奖状态（轮次放 ref；已中奖学号同时放 state 驱动跑马灯重渲染）
+  const testRoundRef = useRef(0);
+  const [testWonIds, setTestWonIds] = useState<Set<string>>(new Set());
+  const testWonIdsRef = useRef<Set<string>>(new Set());
+
   const [lotteryState, setLotteryState] = useState<'slow' | 'fast' | 'video'>('slow');
   const lotteryStateRef = useRef<'slow' | 'fast' | 'video'>('slow');
   const [winners, setWinners] = useState<Participant[]>([]);
@@ -42,8 +66,67 @@ export const HomePage: React.FC = () => {
   const videoEndedRef = useRef(false); // 视频是否播放完毕（完毕后第三次空格才生效）
   const drawingRef = useRef(false);
 
+  // 读取本地测试抽奖状态
+  const readTestProgress = useCallback(() => {
+    const r = Number(safeGet(TESTDATA_ROUND_KEY));
+    const round = Number.isFinite(r) && r >= 0 ? r : 0;
+    let won = new Set<string>();
+    try {
+      const arr = JSON.parse(safeGet(TESTDATA_WON_KEY) || '[]') as string[];
+      if (Array.isArray(arr)) won = new Set(arr);
+    } catch { /* ignore */ }
+    testRoundRef.current = round;
+    // 内容未变化时不更新 state，避免轮询触发跑马灯重渲染
+    const prev = testWonIdsRef.current;
+    const same = prev.size === won.size && Array.from(won).every((id) => prev.has(id));
+    if (!same) {
+      testWonIdsRef.current = won;
+      setTestWonIds(won);
+    }
+    return { round, won };
+  }, []);
+
   // ---------- 数据加载 ----------
   const loadData = useCallback(async () => {
+    // 支持 URL 参数 ?test=1 / ?test=0 即时切换
+    const param = new URLSearchParams(window.location.search).get('test');
+    if (param === '1') safeSet(TESTDATA_ENABLED_KEY, '1');
+    if (param === '0') safeSet(TESTDATA_ENABLED_KEY, '0');
+    const testOn = safeGet(TESTDATA_ENABLED_KEY) === '1';
+    setTestDataOn(testOn);
+
+    if (testOn) {
+      // 测试模式：不请求已录入/中奖/轮次接口，全部使用本地数据
+      const config = await api.getConfig().catch(() => ({ maxRounds: 3 }));
+      setMaxRounds(config.maxRounds || 3);
+
+      let saved = safeGet(TESTDATA_LIST_KEY);
+      if (!saved) {
+        // 本地没有测试数据时自动生成，保证 Chrome 等环境下开关一开就有人
+        const list = generateTestStudents(100);
+        safeSet(TESTDATA_LIST_KEY, JSON.stringify(list));
+        saved = JSON.stringify(list);
+      }
+      const testList: Participant[] = [];
+      try {
+        const parsed = JSON.parse(saved) as { name: string; id_number: string; avatar: string; class?: string }[];
+        parsed.forEach((t) =>
+          testList.push({
+            avatar: t.avatar || '/avatar.png',
+            name: t.name,
+            idNumber: t.id_number,
+            studentClass: t.class || '',
+          })
+        );
+      } catch { /* ignore */ }
+      setParticipants(testList);
+
+      const { round } = readTestProgress();
+      if (lotteryStateRef.current === 'slow') setCurrentRound(round);
+      return;
+    }
+
+    // 正式模式：请求后端真实数据
     const [list, winnerList, round, config] = await Promise.all([
       api.getParticipants().catch(() => [] as ParticipantDTO[]),
       api.getWinners().catch(() => [] as WinnerDTO[]),
@@ -51,37 +134,29 @@ export const HomePage: React.FC = () => {
       api.getConfig().catch(() => ({ maxRounds: 3 })),
     ]);
     setMaxRounds(config.maxRounds || 3);
-    let all = list.map((p) => ({ avatar: p.avatar, name: p.name, idNumber: p.id_number }));
-    // 测试数据开关：开启时将本地测试数据并入跑马灯（不写入数据库）
-    if (localStorage.getItem('draw_testdata_enabled') === '1') {
-      const saved = localStorage.getItem('draw_testdata_list');
-      if (saved) {
-        try {
-          const testList = JSON.parse(saved) as { name: string; id_number: string; avatar: string }[];
-          all = all.concat(
-            testList.map((t) => ({ avatar: t.avatar || '/avatar.png', name: t.name, idNumber: t.id_number }))
-          );
-        } catch { /* ignore */ }
-      }
-    }
-    setParticipants(all);
+    setParticipants(
+      list.map((p) => ({ avatar: p.avatar, name: p.name, idNumber: p.id_number }))
+    );
     setWonIds(new Set(winnerList.map((w) => w.id_number.trim())));
     if (lotteryStateRef.current === 'slow') setCurrentRound(round);
-  }, []);
+  }, [readTestProgress]);
 
   useEffect(() => {
     loadData();
     const timer = window.setInterval(loadData, 5000);
-    // 后台切换测试数据开关时立即刷新
+    // 后台切换测试数据开关时立即刷新（跨标签页 storage 事件 + 同标签页自定义事件）
     const onStorage = (e: StorageEvent) => {
       if (e.key === 'draw_testdata_enabled' || e.key === 'draw_testdata_list') {
         loadData();
       }
     };
+    const onTestDataChange = () => loadData();
     window.addEventListener('storage', onStorage);
+    window.addEventListener('draw_testdata_changed', onTestDataChange);
     return () => {
       window.clearInterval(timer);
       window.removeEventListener('storage', onStorage);
+      window.removeEventListener('draw_testdata_changed', onTestDataChange);
     };
   }, [loadData]);
 
@@ -101,6 +176,21 @@ export const HomePage: React.FC = () => {
     if (drawingRef.current) return null;
     drawingRef.current = true;
     try {
+      // ===== 测试模式：纯本地随机抽奖，不请求后端、不写数据库 =====
+      if (testDataOnRef.current) {
+        const pool = participantsRef.current.filter(
+          (p) => !testWonIdsRef.current.has(p.idNumber.trim())
+        );
+        // Fisher-Yates 洗牌后取前 WINNER_COUNT 个
+        for (let i = pool.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [pool[i], pool[j]] = [pool[j], pool[i]];
+        }
+        const drawn = pool.slice(0, WINNER_COUNT);
+        return { drawn, roundNo: testRoundRef.current + 1 };
+      }
+
+      // ===== 正式模式：调用后端抽奖接口 =====
       const result = await api.drawWinners(WINNER_COUNT);
       return {
         drawn: result.winners.map((w) => ({ avatar: w.avatar, name: w.name, idNumber: w.id_number, studentClass: w.class || '' })),
@@ -116,6 +206,16 @@ export const HomePage: React.FC = () => {
     const drawn = payload ? payload.drawn : [];
     setWinners(drawn);
     if (payload && payload.roundNo > 0) setCurrentRound(payload.roundNo);
+    // 测试模式：把本轮中奖者和轮次写入本地，跑马灯下一轮自动排除
+    if (testDataOnRef.current && payload) {
+      const nextWon = new Set(testWonIdsRef.current);
+      drawn.forEach((d) => nextWon.add(d.idNumber.trim()));
+      testWonIdsRef.current = nextWon;
+      setTestWonIds(nextWon);
+      testRoundRef.current = payload.roundNo;
+      safeSet(TESTDATA_ROUND_KEY, String(payload.roundNo));
+      safeSet(TESTDATA_WON_KEY, JSON.stringify(Array.from(nextWon)));
+    }
   }, []);
 
   const drawRound = useCallback(async () => { applyDraw(await performDraw()); }, [performDraw, applyDraw]);
@@ -130,8 +230,17 @@ export const HomePage: React.FC = () => {
 
   const handleResetDraw = useCallback(async () => {
     if (!window.confirm('确定清空全部中奖记录并重置轮次吗？此操作不可恢复。')) return;
-    try { await api.clearWinners(); } catch (err) { console.warn('[HomePage] 清空中奖记录失败:', err); }
     drawingRef.current = false;
+    if (testDataOnRef.current) {
+      // 测试模式：只清本地状态
+      testRoundRef.current = 0;
+      testWonIdsRef.current = new Set();
+      setTestWonIds(new Set());
+      safeRemove(TESTDATA_ROUND_KEY);
+      safeRemove(TESTDATA_WON_KEY);
+    } else {
+      try { await api.clearWinners(); } catch (err) { console.warn('[HomePage] 清空中奖记录失败:', err); }
+    }
     setCurrentRound(0);
     goHome();
   }, [goHome]);
@@ -172,8 +281,9 @@ export const HomePage: React.FC = () => {
   }, [lotteryState]);
 
   // ---------- 待中奖池（供跑马灯使用）----------
-  const marqueePool = participants.filter((p) => !wonIds.has(p.idNumber.trim()));
-  const testDataOn = localStorage.getItem('draw_testdata_enabled') === '1';
+  // 待中奖池：测试模式排除本地中奖者，正式模式排除后端中奖记录
+  const excludedWonIds = testDataOn ? testWonIds : wonIds;
+  const marqueePool = participants.filter((p) => !excludedWonIds.has(p.idNumber.trim()));
 
   return (
     <PageLayout hideTopBar={lotteryState === 'video'} onResetDraw={handleResetDraw}>

@@ -7,6 +7,14 @@ import {
   WinnerDTO,
   PresetDTO,
 } from '@/services/api';
+import {
+  safeGet,
+  safeSet,
+  safeRemove,
+  TESTDATA_ENABLED_KEY,
+  TESTDATA_LIST_KEY,
+} from '@/utils/storage';
+import { generateTestStudents } from '@/utils/testData';
 
 // 测试数据结构（扩展了 class 字段，仅前端使用）
 interface TestParticipant {
@@ -57,45 +65,41 @@ const AdminPage: React.FC = () => {
   const [winnerPage, setWinnerPage] = useState(1);
 
   // ---------- 测试数据（不写入数据库，仅前端展示用）----------
-  const TESTDATA_KEY = 'draw_testdata_enabled';
   const [testDataEnabled, setTestDataEnabled] = useState<boolean>(
-    () => localStorage.getItem(TESTDATA_KEY) === '1'
+    () => safeGet(TESTDATA_ENABLED_KEY) === '1'
   );
   const [testData, setTestData] = useState<TestParticipant[]>([]);
 
-  const toggleTestData = (on: boolean) => {
-    setTestDataEnabled(on);
-    localStorage.setItem(TESTDATA_KEY, on ? '1' : '0');
-    showTip(true, on ? '测试数据已开启（仅前端展示，不写入数据库）' : '测试数据已关闭');
-  };
-
   const generateTestData = () => {
-    const surnames = ['王','李','张','刘','陈','杨','黄','赵','吴','周','徐','孙','马','朱','胡','林','郭','何','高','罗'];
-    const givens = ['伟','芳','娜','敏','静','丽','强','磊','军','洋','勇','艳','杰','娟','涛','明','超','霞','平','刚','桂英','文','辉','鹏','飞'];
-    const classes = ['信安2301','信安2302','网工2301','网工2302','软工2301','软工2302','数媒2301','计科2301'];
-    const list: TestParticipant[] = [];
-    for (let i = 0; i < 100; i++) {
-      const name = surnames[Math.floor(Math.random() * surnames.length)] +
-        givens[Math.floor(Math.random() * givens.length)] +
-        (Math.random() > 0.5 ? givens[Math.floor(Math.random() * givens.length)] : '');
-      const id_number = `2023${String(500000 + i).padStart(6, '0')}`;
-      list.push({
-        id: 100000 + i,
-        name,
-        id_number,
-        avatar: '/avatar.png',
-        created_at: new Date().toISOString(),
-        class: classes[Math.floor(Math.random() * classes.length)],
-      });
-    }
+    const list: TestParticipant[] = generateTestStudents(100).map((s, i) => ({
+      id: 100000 + i,
+      name: s.name,
+      id_number: s.id_number,
+      avatar: s.avatar,
+      created_at: new Date().toISOString(),
+      class: s.class,
+    }));
     setTestData(list);
-    localStorage.setItem('draw_testdata_list', JSON.stringify(list));
+    safeSet(TESTDATA_LIST_KEY, JSON.stringify(list));
+    window.dispatchEvent(new CustomEvent('draw_testdata_changed'));
     showTip(true, `已生成 ${list.length} 条测试数据（不写入数据库）`);
   };
 
-  // 组件挂载时从 localStorage 恢复测试数据
+  const toggleTestData = (on: boolean) => {
+    setTestDataEnabled(on);
+    safeSet(TESTDATA_ENABLED_KEY, on ? '1' : '0');
+    // 打开开关时若尚未生成数据，自动生成 100 条
+    if (on && !safeGet(TESTDATA_LIST_KEY)) {
+      generateTestData();
+    }
+    // 同标签页通知首页立即刷新（storage 事件只在跨标签页触发）
+    window.dispatchEvent(new CustomEvent('draw_testdata_changed'));
+    showTip(true, on ? '测试数据已开启（仅前端展示，不写入数据库）' : '测试数据已关闭');
+  };
+
+  // 组件挂载时从本地恢复测试数据
   useEffect(() => {
-    const saved = localStorage.getItem('draw_testdata_list');
+    const saved = safeGet(TESTDATA_LIST_KEY);
     if (saved) {
       try { setTestData(JSON.parse(saved)); } catch { /* ignore */ }
     }
@@ -943,7 +947,8 @@ const AdminPage: React.FC = () => {
                     className={btnDanger}
                     onClick={() => {
                       setTestData([]);
-                      localStorage.removeItem('draw_testdata_list');
+                      safeRemove(TESTDATA_LIST_KEY);
+                      window.dispatchEvent(new CustomEvent('draw_testdata_changed'));
                       showTip(true, '已清除测试数据');
                     }}
                   >

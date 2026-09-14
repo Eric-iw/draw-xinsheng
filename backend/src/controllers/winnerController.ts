@@ -52,7 +52,8 @@ router.post('/', async (req: Request, res: Response) => {
       res.status(400).json({ code: 1, msg: 'participant_id / name / id_number 必填' });
       return;
     }
-    const round_no = await winnerService.getCurrentRound();
+    // getCurrentRound 返回已完成轮次数，手动记录归入下一轮需 +1
+    const round_no = (await winnerService.getCurrentRound()) + 1;
     const w = await winnerService.recordWinner({
       participant_id,
       name,
