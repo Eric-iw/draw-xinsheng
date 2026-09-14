@@ -13,8 +13,8 @@ interface StudentMarqueeWallProps {
 }
 
 const ROW_COUNT = 5;
-const MARQUEE_DURATION = 40; // 慢速滚动时长（秒）
-const FAST_DURATION = 8;     // 快速滚动时长（秒）
+const MARQUEE_DURATION = 150; // 慢速滚动时长（秒）
+const FAST_DURATION = 8 ;     // 快速滚动时长（秒）
 const ROW_GAP = 20;          // 行间距
 const CARD_GAP = 24;         // 卡片外部间距
 const ROW_ROTATION = 1.5;   // 每行整体倾斜角度

@@ -50,4 +50,17 @@ export async function ensureTables(): Promise<void> {
       UNIQUE KEY uk_preset_id_number (id_number)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='拟定中奖人';
   `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS settings (
+      skey        VARCHAR(50)  NOT NULL PRIMARY KEY COMMENT '配置键',
+      svalue      VARCHAR(255) NOT NULL COMMENT '配置值',
+      updated_at  DATETIME     DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='系统配置（键值对）';
+  `);
+
+  // 默认抽奖轮次为 3（仅在首次启动时写入，不覆盖管理员配置）
+  await pool.query(
+    `INSERT IGNORE INTO settings (skey, svalue) VALUES ('max_rounds', '3')`
+  );
 }

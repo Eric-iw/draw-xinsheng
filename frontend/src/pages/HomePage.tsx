@@ -24,7 +24,6 @@ const WINNER_ORIGIN_Y = 100;
 const WINNER_GAP_X = 39;
 const WINNER_GAP_Y = 16;
 const WINNER_STAGGER_MS = 110;
-const MAX_ROUNDS = 3;
 
 export const HomePage: React.FC = () => {
   // ---------- 跑马灯（TODO：按示例图重写）----------
@@ -33,21 +32,25 @@ export const HomePage: React.FC = () => {
 
   // ---------- 抽奖状态 ----------
   const [currentRound, setCurrentRound] = useState(0);
+  const [maxRounds, setMaxRounds] = useState(3); // 从后端配置读取，默认 3
   const [lotteryState, setLotteryState] = useState<'slow' | 'fast' | 'video'>('slow');
   const lotteryStateRef = useRef<'slow' | 'fast' | 'video'>('slow');
   const [winners, setWinners] = useState<Participant[]>([]);
   const [revealed, setRevealed] = useState(false);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const revealedRef = useRef(false);
+  const videoEndedRef = useRef(false); // 视频是否播放完毕（完毕后第三次空格才生效）
   const drawingRef = useRef(false);
 
   // ---------- 数据加载 ----------
   const loadData = useCallback(async () => {
-    const [list, winnerList, round] = await Promise.all([
+    const [list, winnerList, round, config] = await Promise.all([
       api.getParticipants().catch(() => [] as ParticipantDTO[]),
       api.getWinners().catch(() => [] as WinnerDTO[]),
       api.getCurrentRound().catch(() => 0),
+      api.getConfig().catch(() => ({ maxRounds: 3 })),
     ]);
+    setMaxRounds(config.maxRounds || 3);
     let all = list.map((p) => ({ avatar: p.avatar, name: p.name, idNumber: p.id_number }));
     // 测试数据开关：开启时将本地测试数据并入跑马灯（不写入数据库）
     if (localStorage.getItem('draw_testdata_enabled') === '1') {
@@ -120,6 +123,7 @@ export const HomePage: React.FC = () => {
   const goHome = useCallback(() => {
     setLotteryState('slow');
     revealedRef.current = false;
+    videoEndedRef.current = false;
     setRevealed(false);
     setWinners([]);
   }, []);
@@ -138,23 +142,26 @@ export const HomePage: React.FC = () => {
       if (e.code !== 'Space') return;
       e.preventDefault();
       if (lotteryState === 'slow') {
-        if (currentRound >= MAX_ROUNDS) return;
+        if (currentRound >= maxRounds) return;
         setLotteryState('fast');
       } else if (lotteryState === 'fast') {
         setLotteryState('video');
         void drawRound();
       } else if (lotteryState === 'video') {
+        // 视频播放完毕后才允许退出
+        if (!videoEndedRef.current) return;
         goHome();
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [lotteryState, currentRound, goHome, drawRound]);
+  }, [lotteryState, currentRound, maxRounds, goHome, drawRound]);
 
   // 进入 video 时复位并播放
   useEffect(() => {
     if (lotteryState !== 'video') return;
     revealedRef.current = false;
+    videoEndedRef.current = false;
     setRevealed(false);
     const v = videoRef.current;
     if (!v) return;
@@ -194,6 +201,7 @@ export const HomePage: React.FC = () => {
         playsInline
         preload="auto"
         onTimeUpdate={handleTimeUpdate}
+        onEnded={() => { videoEndedRef.current = true; }}
       />
 
       {/* ====== 轮次标题 ====== */}

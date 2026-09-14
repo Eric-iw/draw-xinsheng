@@ -49,10 +49,12 @@ const AdminPage: React.FC = () => {
   const [participants, setParticipants] = useState<ParticipantDTO[]>([]);
   const [winners, setWinners] = useState<WinnerDTO[]>([]);
   const [presets, setPresets] = useState<PresetDTO[]>([]);
+  const [maxRounds, setMaxRounds] = useState(3); // 抽奖总轮次（后端配置）
   const [tip, setTip] = useState<{ ok: boolean; text: string } | null>(null);
   const [studentSearch, setStudentSearch] = useState('');
   const [participantSearch, setParticipantSearch] = useState('');
   const [participantPage, setParticipantPage] = useState(1);
+  const [winnerPage, setWinnerPage] = useState(1);
 
   // ---------- 测试数据（不写入数据库，仅前端展示用）----------
   const TESTDATA_KEY = 'draw_testdata_enabled';
@@ -132,6 +134,12 @@ const AdminPage: React.FC = () => {
       showTip(false, (e as Error).message);
     }
   }, []);
+  const loadConfig = useCallback(async () => {
+    try {
+      const cfg = await api.getConfig();
+      setMaxRounds(cfg.maxRounds || 3);
+    } catch { /* 配置加载失败保留默认 */ }
+  }, []);
 
   // 切换标签时加载该页数据（跨表关联的页一并拉取）
   useEffect(() => {
@@ -144,12 +152,13 @@ const AdminPage: React.FC = () => {
     } else if (tab === 'winners') {
       loadWinners();
       loadStudents();
+      loadConfig();
     } else {
       loadPresets();
       loadParticipants();
       loadWinners();
     }
-  }, [tab, loadStudents, loadParticipants, loadWinners, loadPresets]);
+  }, [tab, loadStudents, loadParticipants, loadWinners, loadPresets, loadConfig]);
 
   const classById = React.useMemo(() => {
     const m = new Map<string, string>();
@@ -179,6 +188,13 @@ const AdminPage: React.FC = () => {
   const pagedParticipants = filteredParticipants.slice(
     (participantCurrentPage - 1) * PAGE_SIZE,
     participantCurrentPage * PAGE_SIZE
+  );
+  // 已中奖名单分页
+  const winnerTotalPages = Math.max(1, Math.ceil(winners.length / PAGE_SIZE));
+  const winnerCurrentPage = Math.min(winnerPage, winnerTotalPages);
+  const pagedWinners = winners.slice(
+    (winnerCurrentPage - 1) * PAGE_SIZE,
+    winnerCurrentPage * PAGE_SIZE
   );
 
   // ---------- 学生库表单 ----------
@@ -624,6 +640,33 @@ const AdminPage: React.FC = () => {
           {/* ============ 已中奖名单 ============ */}
           {tab === 'winners' && (
             <div>
+              {/* 抽奖轮次设置 */}
+              <div className="mb-5 flex items-center gap-3 rounded-md border border-blue-200 bg-blue-50 px-4 py-3">
+                <span className="text-sm font-semibold text-gray-700">抽奖总轮次：</span>
+                <input
+                  type="number"
+                  min={1}
+                  max={20}
+                  value={maxRounds}
+                  onChange={(e) => setMaxRounds(Math.max(1, Math.min(20, Number(e.target.value) || 1)))}
+                  className="w-20 rounded-md border border-gray-300 px-2 py-1 text-sm outline-none focus:border-blue-500"
+                />
+                <span className="text-sm text-gray-500">轮（1-20，修改后立即生效）</span>
+                <button
+                  className={btnPrimary}
+                  onClick={async () => {
+                    try {
+                      await api.setMaxRounds(maxRounds);
+                      showTip(true, `抽奖总轮次已设置为 ${maxRounds} 轮`);
+                    } catch (e) {
+                      showTip(false, (e as Error).message);
+                    }
+                  }}
+                >
+                  保存
+                </button>
+              </div>
+
               <div className="mb-4 flex items-center justify-between">
                 <span className="text-sm text-gray-500">共 {winners.length} 人已中奖</span>
                 <div className="flex gap-2">
@@ -670,7 +713,7 @@ const AdminPage: React.FC = () => {
                   </tr>
                 </thead>
                 <tbody>
-                  {winners.map((w) => (
+                  {pagedWinners.map((w) => (
                     <tr key={w.id} className="border-b last:border-0">
                       <td className="py-2 pr-4 font-semibold text-[#3A6085]">第 {w.round_no} 轮</td>
                       <td className="py-2 pr-4">
@@ -687,6 +730,46 @@ const AdminPage: React.FC = () => {
                   )}
                 </tbody>
               </table>
+
+              {/* 分页控件 */}
+              {winners.length > 0 && (
+                <div className="mt-4 flex items-center justify-between text-sm">
+                  <span className="text-gray-500">
+                    第 {winnerCurrentPage} / {winnerTotalPages} 页，每页 {PAGE_SIZE} 条
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <button
+                      className="rounded border border-gray-300 px-3 py-1 text-gray-600 hover:bg-gray-100 disabled:opacity-40"
+                      onClick={() => setWinnerPage((p) => Math.max(1, p - 1))}
+                      disabled={winnerCurrentPage <= 1}
+                    >
+                      上一页
+                    </button>
+                    {Array.from({ length: winnerTotalPages }, (_, i) => i + 1)
+                      .filter((p) => p === 1 || p === winnerTotalPages || Math.abs(p - winnerCurrentPage) <= 1)
+                      .map((p, idx, arr) => (
+                        <React.Fragment key={p}>
+                          {idx > 0 && arr[idx - 1] !== p - 1 && <span className="text-gray-400">…</span>}
+                          <button
+                            className={`rounded px-3 py-1 ${
+                              p === winnerCurrentPage ? 'bg-[#3A6085] text-white' : 'border border-gray-300 text-gray-600 hover:bg-gray-100'
+                            }`}
+                            onClick={() => setWinnerPage(p)}
+                          >
+                            {p}
+                          </button>
+                        </React.Fragment>
+                      ))}
+                    <button
+                      className="rounded border border-gray-300 px-3 py-1 text-gray-600 hover:bg-gray-100 disabled:opacity-40"
+                      onClick={() => setWinnerPage((p) => Math.min(winnerTotalPages, p + 1))}
+                      disabled={winnerCurrentPage >= winnerTotalPages}
+                    >
+                      下一页
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 

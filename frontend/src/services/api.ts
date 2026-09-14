@@ -127,6 +127,14 @@ export const api = {
     }),
   clearWinners: () => request<{ msg?: string }>('/api/winners', { method: 'DELETE' }),
 
+  // 系统配置（抽奖总轮次等）
+  getConfig: () => request<{ maxRounds: number }>('/api/settings'),
+  setMaxRounds: (maxRounds: number) =>
+    request<{ maxRounds: number }>('/api/settings/max-rounds', {
+      method: 'PUT',
+      body: JSON.stringify({ maxRounds }),
+    }),
+
   deleteParticipant: (id: number) =>
     request<boolean>(`/api/participants/${id}`, { method: 'DELETE' }),
   clearParticipants: () =>
