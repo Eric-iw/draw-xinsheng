@@ -369,7 +369,18 @@ const AdminPage: React.FC = () => {
                 </button>
                 <span className="text-xs text-gray-400">模板表头：姓名、学号、班级（列序不限，重复学号自动跳过）</span>
                 <button
-                  className={`${btnDanger} ml-auto`}
+                  className={`${btnPrimary} ml-auto`}
+                  onClick={async () => {
+                    if (!window.confirm('确定将学生库中尚未录入的学生全部录入？')) return;
+                    const res = await api.registerAllParticipants();
+                    showTip(true, `已录入 ${res.affected} 人（共 ${res.total} 人未录入）`);
+                    loadParticipants();
+                  }}
+                >
+                  一键全部录入
+                </button>
+                <button
+                  className={btnDanger}
                   onClick={async () => {
                     if (!window.confirm('确定清空整个学生库？此操作不可恢复。')) return;
                     await api.clearStudents();

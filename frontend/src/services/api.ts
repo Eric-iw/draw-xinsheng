@@ -131,6 +131,8 @@ export const api = {
     request<boolean>(`/api/participants/${id}`, { method: 'DELETE' }),
   clearParticipants: () =>
     request<{ affected: number }>('/api/participants', { method: 'DELETE' }),
+  registerAllParticipants: () =>
+    request<{ affected: number; total: number }>('/api/participants/register-all', { method: 'POST' }),
 
   // 学生库（录入白名单）
   getStudents: () => request<StudentDTO[]>('/api/students'),

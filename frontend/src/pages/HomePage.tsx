@@ -81,7 +81,7 @@ export const HomePage: React.FC = () => {
   );
   const rows = useMemo(() => chunk(pool, columns), [pool]);
 
-  // slow → fast（3s 自动）→ video（第 8 秒翻牌揭晓，视频继续播完定格）→ slow（空格）
+  // slow → fast → video（播视频，第8秒揭晓）→ 空格回首页；三轮分开进行
   const [lotteryState, setLotteryState] = useState<'slow' | 'fast' | 'video'>('slow');
   useEffect(() => {
     lotteryStateRef.current = lotteryState;
@@ -90,15 +90,8 @@ export const HomePage: React.FC = () => {
   const [winners, setWinners] = useState<Participant[]>([]);
   const [revealed, setRevealed] = useState(false);
   const videoRef = useRef<HTMLVideoElement | null>(null);
-  const fastTimerRef = useRef<number | null>(null);
   const revealedRef = useRef(false);
   const drawingRef = useRef(false); // 防止一次抽奖重复请求
-  // 清场过渡：本轮卡片翻走后再进入下一轮
-  const [exiting, setExiting] = useState(false);
-  const exitTimerRef = useRef<number | null>(null);
-  // 轮间切换提前请求的结果缓存：清场动画结束时立刻应用，不用等网络
-  const pendingDrawRef = useRef<DrawPayload | null>(null);
-  const exitDoneRef = useRef(false); // 清场动画是否已结束（供慢请求回来后补应用）
 
   // 视频播放到第 8 秒（媒体真实进度）触发一次揭晓，不用定时器猜测
   const REVEAL_SECOND = 8;
@@ -110,7 +103,7 @@ export const HomePage: React.FC = () => {
     }
   }, []);
 
-  // 只发起抽奖请求并返回结果（不写状态），供轮间切换提前预取
+  // 只发起抽奖请求并返回结果（不写状态）
   const performDraw = useCallback(async (): Promise<DrawPayload | null> => {
     if (drawingRef.current) return null;
     drawingRef.current = true;
@@ -150,13 +143,6 @@ export const HomePage: React.FC = () => {
 
   // 回到首页（跑马灯）并复位所有展示状态
   const goHome = useCallback(() => {
-    if (exitTimerRef.current !== null) {
-      window.clearTimeout(exitTimerRef.current);
-      exitTimerRef.current = null;
-    }
-    exitDoneRef.current = true;
-    pendingDrawRef.current = null;
-    setExiting(false);
     setLotteryState('slow');
     revealedRef.current = false;
     setRevealed(false);
@@ -177,74 +163,40 @@ export const HomePage: React.FC = () => {
     goHome();
   }, [goHome]);
 
-  // 空格键：slow → fast（共三轮，三轮后空格不再开启新一轮）；
-  // video 已揭晓且未满三轮 → 清场动画后直接进入下一轮（不再重播视频）；第三轮结束 → slow 回首页
+  // 空格键：slow → fast（跑马灯加速）；fast → 手动触发抽奖+视频；video → 回首页
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.code !== 'Space') return;
       e.preventDefault();
       if (lotteryState === 'slow') {
-        if (currentRound >= MAX_ROUNDS) return; // 三轮已抽完，停留首页
+        if (currentRound >= MAX_ROUNDS) return;
         setLotteryState('fast');
+      } else if (lotteryState === 'fast') {
+        // 手动触发：立即进入视频，抽奖请求后台进行
+        setLotteryState('video');
+        void drawRound();
       } else if (lotteryState === 'video') {
-        if (!revealed || currentRound >= MAX_ROUNDS) {
-          // 视频未播到揭晓（中途退出）或第三轮已揭晓 → 回首页
-          goHome();
-        } else if (winners.length > 0) {
-          // 轮间切换：不进首页。立即定格视频并提前发起下一轮抽奖，
-          // 清场动画一结束卡片立刻翻牌，不再等待网络往返
-          if (exitTimerRef.current !== null) return; // 清场进行中，忽略重复按键
-          videoRef.current?.pause();
-          pendingDrawRef.current = null;
-          exitDoneRef.current = false;
-          setExiting(true);
-          exitTimerRef.current = window.setTimeout(() => {
-            exitTimerRef.current = null;
-            exitDoneRef.current = true;
-            setExiting(false);
-            setWinners([]);
-            revealedRef.current = false;
-            setRevealed(true); // 后续轮次不播视频：门闩直接打开
-            const pending = pendingDrawRef.current;
-            if (pending !== null) applyDraw(pending);
-            // pending 仍为 null 表示请求较慢，返回后由 exitDoneRef 检查补应用
-          }, 500);
-          void performDraw().then((p) => {
-            pendingDrawRef.current = p;
-            if (exitDoneRef.current) applyDraw(p); // 动画已结束则立即应用
-          });
-        }
+        goHome();
       }
-      // fast 时忽略空格，等 3s 自动
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [lotteryState, currentRound, revealed, winners, performDraw, applyDraw, goHome]);
+  }, [lotteryState, currentRound, goHome, drawRound]);
 
-  // fast 结束后调后端抽奖接口，再进入 video 阶段
+  // 进入 video 时复位揭晓门闩并从头播放视频
   useEffect(() => {
-    if (lotteryState !== 'fast') return;
-    fastTimerRef.current = window.setTimeout(() => {
-      void drawRound().finally(() => setLotteryState('video'));
-    }, 1500);
-    return () => {
-      if (fastTimerRef.current !== null) {
-        window.clearTimeout(fastTimerRef.current);
-        fastTimerRef.current = null;
-      }
-    };
-  }, [lotteryState, drawRound]);
-
-  // 进入 video 时复位揭晓门闩并自动播放
-  useEffect(() => {
-    if (lotteryState === 'video') {
-      revealedRef.current = false;
-      setRevealed(false);
-      const v = videoRef.current;
-      if (v) {
-        v.currentTime = 0;
-        v.play().catch(() => { /* autoplay blocked */ });
-      }
+    if (lotteryState !== 'video') return;
+    revealedRef.current = false;
+    setRevealed(false);
+    const v = videoRef.current;
+    if (!v) return;
+    v.currentTime = 0;
+    const play = () => v.play().catch((err) => console.warn('[video] play blocked:', err));
+    if (v.readyState >= 2) {
+      play();
+    } else {
+      v.addEventListener('canplay', play, { once: true });
+      return () => v.removeEventListener('canplay', play);
     }
   }, [lotteryState]);
 
@@ -284,21 +236,20 @@ export const HomePage: React.FC = () => {
         })}
       </div>
 
-      {/* 视频层：全覆盖，hideTopBar 负责顶栏隐藏；播完自然锁定最后一帧 */}
-      {lotteryState === 'video' && (
-        <video
-          ref={videoRef}
-          src="/video/draw.mp4"
-          className="fixed inset-0 z-[100] h-full w-full object-cover"
-          playsInline
-          autoPlay
-          preload="auto"
-          onTimeUpdate={handleTimeUpdate}
-        />
-      )}
+      {/* 视频层：始终挂载以预加载，非 video 状态透明隐藏 */}
+      <video
+        ref={videoRef}
+        src="/video/draw.mp4"
+        className={`fixed inset-0 h-full w-full object-cover transition-none ${
+          lotteryState === 'video' ? 'z-[100] opacity-100' : '-z-[1] opacity-0 pointer-events-none'
+        }`}
+        playsInline
+        preload="auto"
+        onTimeUpdate={handleTimeUpdate}
+      />
 
-      {/* 轮次标题：视频第 8 秒随揭晓出现，显示"第 X 轮抽奖"；清场时随卡片一同消失 */}
-      {lotteryState === 'video' && revealed && !exiting && winners.length > 0 && (
+      {/* 轮次标题：视频第 8 秒随揭晓出现 */}
+      {lotteryState === 'video' && revealed && winners.length > 0 && (
         <div className="pointer-events-none fixed inset-x-0 top-[20px] z-[120] flex items-center justify-center gap-[20px]">
           <img src="/xian.png" alt="" className="h-[20px] w-auto" />
           <div className="font-ys-title text-[36px] leading-[42px] tracking-[6px] text-white drop-shadow-[0_2px_10px_rgba(0,0,0,0.65)]">
@@ -308,7 +259,7 @@ export const HomePage: React.FC = () => {
         </div>
       )}
 
-      {/* 中奖者揭晓层：视频第 8 秒渲染，10 张卡片两行（每行 5 张）逐个翻牌出现 */}
+      {/* 中奖者揭晓层：视频第 8 秒渲染 */}
       {lotteryState === 'video' && revealed && winners.length > 0 && (
         <div
           className="perspective-1200 pointer-events-none fixed z-[110] flex flex-wrap content-start"
@@ -323,12 +274,12 @@ export const HomePage: React.FC = () => {
           {winners.map((w, i) => (
             <WinnerCard
               key={`${w.idNumber}-${w.name}`}
-              className={exiting ? 'winner-flip-out' : 'winner-flip'}
+              className="winner-flip"
               avatar={w.avatar}
               name={w.name}
               idNumber={w.idNumber}
               studentClass={w.studentClass}
-              style={exiting ? undefined : { animationDelay: `${i * WINNER_STAGGER_MS}ms` }}
+              style={{ animationDelay: `${i * WINNER_STAGGER_MS}ms` }}
             />
           ))}
         </div>

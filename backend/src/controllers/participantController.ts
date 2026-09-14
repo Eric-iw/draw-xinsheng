@@ -25,6 +25,26 @@ router.get('/count', async (_req: Request, res: Response) => {
   }
 });
 
+// POST /api/participants/register-all — 将学生库中未录入的学生一键全部录入
+router.post('/register-all', async (_req: Request, res: Response) => {
+  try {
+    const students = await studentService.findAll();
+    const existing = await participantService.findAll();
+    const existingIds = new Set(existing.map((p) => p.id_number.trim()));
+    const toInsert = students
+      .filter((s) => !existingIds.has(s.id_number.trim()))
+      .map((s) => ({
+        name: s.name,
+        id_number: s.id_number,
+        avatar: matchAvatarOrDefault(s.name, s.id_number),
+      }));
+    const affected = await participantService.bulkCreate(toInsert);
+    res.json({ code: 0, data: { affected, total: toInsert.length } });
+  } catch (err) {
+    res.status(500).json({ code: 1, msg: (err as Error).message });
+  }
+});
+
 // POST /api/participants — 录入（校验：学号必须在学生库且姓名匹配）
 router.post('/', async (req: Request, res: Response) => {
   try {
