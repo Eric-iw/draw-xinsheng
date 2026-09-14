@@ -1,7 +1,7 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import PageLayout from '@/layouts/PageLayout';
-import ParticipantCard from '@/components/ParticipantCard';
 import WinnerCard, { CARD_WIDTH } from '@/components/WinnerCard';
+import StudentMarqueeWall from '@/components/StudentMarqueeWall';
 import { api, ParticipantDTO, WinnerDTO } from '@/services/api';
 
 interface Participant {
@@ -16,84 +16,75 @@ interface DrawPayload {
   roundNo: number;
 }
 
-const ROW_ROTATION = 'rotate-[3deg]';
-
-// 中奖揭晓布局：共 10 人，两行每行 5 张；第一张卡片位于页面 (74, 64)
+// 中奖揭晓布局
 const WINNER_COUNT = 10;
 const WINNER_COLS = 5;
 const WINNER_ORIGIN_X = 74;
 const WINNER_ORIGIN_Y = 100;
-const WINNER_GAP_X = 39; // 卡片水平间距
-const WINNER_GAP_Y = 16; // 上下行间距
-const WINNER_STAGGER_MS = 110; // 卡片逐个翻牌间隔（稍快）
-const MAX_ROUNDS = 3; // 抽奖总轮次
-
-function chunk<T>(arr: T[], size: number): T[][] {
-  const rows: T[][] = [];
-  for (let i = 0; i < arr.length; i += size) {
-    rows.push(arr.slice(i, i + size));
-  }
-  return rows;
-}
+const WINNER_GAP_X = 39;
+const WINNER_GAP_Y = 16;
+const WINNER_STAGGER_MS = 110;
+const MAX_ROUNDS = 3;
 
 export const HomePage: React.FC = () => {
-  const columns = 10;
+  // ---------- 跑马灯（TODO：按示例图重写）----------
   const [participants, setParticipants] = useState<Participant[]>([]);
-  // 已中奖学号集合：跑马灯池排除这些人，已中奖不允许再次中奖
   const [wonIds, setWonIds] = useState<Set<string>>(new Set());
-  // 当前已完成的抽奖轮次（以后端 winners 表轮次号为准，清空后归零）
+
+  // ---------- 抽奖状态 ----------
   const [currentRound, setCurrentRound] = useState(0);
-
-  // 抽奖流程状态镜像：轮询回调里据此判断能否同步轮次
+  const [lotteryState, setLotteryState] = useState<'slow' | 'fast' | 'video'>('slow');
   const lotteryStateRef = useRef<'slow' | 'fast' | 'video'>('slow');
+  const [winners, setWinners] = useState<Participant[]>([]);
+  const [revealed, setRevealed] = useState(false);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const revealedRef = useRef(false);
+  const drawingRef = useRef(false);
 
-  // 从后端加载参与者 + 已中奖名单 + 当前轮次（各自容错，互不影响轮询）
+  // ---------- 数据加载 ----------
   const loadData = useCallback(async () => {
     const [list, winnerList, round] = await Promise.all([
-      api.getParticipants().catch((err) => {
-        console.warn('[HomePage] 加载参与者失败:', err);
-        return [] as ParticipantDTO[];
-      }),
+      api.getParticipants().catch(() => [] as ParticipantDTO[]),
       api.getWinners().catch(() => [] as WinnerDTO[]),
       api.getCurrentRound().catch(() => 0),
     ]);
-    setParticipants(
-      list.map((p) => ({ avatar: p.avatar, name: p.name, idNumber: p.id_number }))
-    );
-    setWonIds(new Set(winnerList.map((w) => w.id_number.trim())));
-    // 仅在首页（slow）同步后端轮次：抽奖进行中该请求可能发出于本轮写入之前，
-    // 拿到旧轮次号会覆盖 applyDraw 设置的值，导致顶部轮次显示错乱
-    if (lotteryStateRef.current === 'slow') {
-      setCurrentRound(round);
+    let all = list.map((p) => ({ avatar: p.avatar, name: p.name, idNumber: p.id_number }));
+    // 测试数据开关：开启时将本地测试数据并入跑马灯（不写入数据库）
+    if (localStorage.getItem('draw_testdata_enabled') === '1') {
+      const saved = localStorage.getItem('draw_testdata_list');
+      if (saved) {
+        try {
+          const testList = JSON.parse(saved) as { name: string; id_number: string; avatar: string }[];
+          all = all.concat(
+            testList.map((t) => ({ avatar: t.avatar || '/avatar.png', name: t.name, idNumber: t.id_number }))
+          );
+        } catch { /* ignore */ }
+      }
     }
+    setParticipants(all);
+    setWonIds(new Set(winnerList.map((w) => w.id_number.trim())));
+    if (lotteryStateRef.current === 'slow') setCurrentRound(round);
   }, []);
 
   useEffect(() => {
     loadData();
     const timer = window.setInterval(loadData, 5000);
-    return () => window.clearInterval(timer);
+    // 后台切换测试数据开关时立即刷新
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === 'draw_testdata_enabled' || e.key === 'draw_testdata_list') {
+        loadData();
+      }
+    };
+    window.addEventListener('storage', onStorage);
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener('storage', onStorage);
+    };
   }, [loadData]);
 
-  // 待中奖池：已录入且未中奖
-  const pool = useMemo(
-    () => participants.filter((p) => !wonIds.has(p.idNumber.trim())),
-    [participants, wonIds]
-  );
-  const rows = useMemo(() => chunk(pool, columns), [pool]);
+  useEffect(() => { lotteryStateRef.current = lotteryState; }, [lotteryState]);
 
-  // slow → fast → video（播视频，第8秒揭晓）→ 空格回首页；三轮分开进行
-  const [lotteryState, setLotteryState] = useState<'slow' | 'fast' | 'video'>('slow');
-  useEffect(() => {
-    lotteryStateRef.current = lotteryState;
-  }, [lotteryState]);
-  // 中奖者（共 10 人）：进入 video 阶段时抽出；revealed：视频播放到第 8 秒后才允许揭晓
-  const [winners, setWinners] = useState<Participant[]>([]);
-  const [revealed, setRevealed] = useState(false);
-  const videoRef = useRef<HTMLVideoElement | null>(null);
-  const revealedRef = useRef(false);
-  const drawingRef = useRef(false); // 防止一次抽奖重复请求
-
-  // 视频播放到第 8 秒（媒体真实进度）触发一次揭晓，不用定时器猜测
+  // ---------- 抽奖逻辑 ----------
   const REVEAL_SECOND = 8;
   const handleTimeUpdate = useCallback(() => {
     const v = videoRef.current;
@@ -103,45 +94,29 @@ export const HomePage: React.FC = () => {
     }
   }, []);
 
-  // 只发起抽奖请求并返回结果（不写状态）
   const performDraw = useCallback(async (): Promise<DrawPayload | null> => {
     if (drawingRef.current) return null;
     drawingRef.current = true;
     try {
       const result = await api.drawWinners(WINNER_COUNT);
-      const drawn: Participant[] = result.winners.map((w) => ({
-        avatar: w.avatar,
-        name: w.name,
-        idNumber: w.id_number,
-        studentClass: w.class || '',
-      }));
-      return { drawn, roundNo: result.round_no };
+      return {
+        drawn: result.winners.map((w) => ({ avatar: w.avatar, name: w.name, idNumber: w.id_number, studentClass: w.class || '' })),
+        roundNo: result.round_no,
+      };
     } catch (err) {
       console.warn('[HomePage] 抽奖失败:', err);
       return null;
-    } finally {
-      drawingRef.current = false;
-    }
+    } finally { drawingRef.current = false; }
   }, []);
 
-  // 把一轮抽奖结果写入页面状态（中奖卡片 / 轮次 / 已中奖池）
   const applyDraw = useCallback((payload: DrawPayload | null) => {
     const drawn = payload ? payload.drawn : [];
     setWinners(drawn);
     if (payload && payload.roundNo > 0) setCurrentRound(payload.roundNo);
-    // 立即从待中奖池移除本轮中奖者（等下一次轮询也会同步）
-    setWonIds((prev) => {
-      const next = new Set(prev);
-      drawn.forEach((d) => next.add(d.idNumber.trim()));
-      return next;
-    });
   }, []);
 
-  const drawRound = useCallback(async () => {
-    applyDraw(await performDraw());
-  }, [performDraw, applyDraw]);
+  const drawRound = useCallback(async () => { applyDraw(await performDraw()); }, [performDraw, applyDraw]);
 
-  // 回到首页（跑马灯）并复位所有展示状态
   const goHome = useCallback(() => {
     setLotteryState('slow');
     revealedRef.current = false;
@@ -149,21 +124,15 @@ export const HomePage: React.FC = () => {
     setWinners([]);
   }, []);
 
-  // 顶部栏"清空抽奖记录"：清空后端中奖记录与轮次，本地立即复位
   const handleResetDraw = useCallback(async () => {
     if (!window.confirm('确定清空全部中奖记录并重置轮次吗？此操作不可恢复。')) return;
-    try {
-      await api.clearWinners();
-    } catch (err) {
-      console.warn('[HomePage] 清空中奖记录失败:', err);
-    }
+    try { await api.clearWinners(); } catch (err) { console.warn('[HomePage] 清空中奖记录失败:', err); }
     drawingRef.current = false;
     setCurrentRound(0);
-    setWonIds(new Set());
     goHome();
   }, [goHome]);
 
-  // 空格键：slow → fast（跑马灯加速）；fast → 手动触发抽奖+视频；video → 回首页
+  // ---------- 键盘控制 ----------
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.code !== 'Space') return;
@@ -172,7 +141,6 @@ export const HomePage: React.FC = () => {
         if (currentRound >= MAX_ROUNDS) return;
         setLotteryState('fast');
       } else if (lotteryState === 'fast') {
-        // 手动触发：立即进入视频，抽奖请求后台进行
         setLotteryState('video');
         void drawRound();
       } else if (lotteryState === 'video') {
@@ -183,7 +151,7 @@ export const HomePage: React.FC = () => {
     return () => window.removeEventListener('keydown', onKey);
   }, [lotteryState, currentRound, goHome, drawRound]);
 
-  // 进入 video 时复位揭晓门闩并从头播放视频
+  // 进入 video 时复位并播放
   useEffect(() => {
     if (lotteryState !== 'video') return;
     revealedRef.current = false;
@@ -192,51 +160,31 @@ export const HomePage: React.FC = () => {
     if (!v) return;
     v.currentTime = 0;
     const play = () => v.play().catch((err) => console.warn('[video] play blocked:', err));
-    if (v.readyState >= 2) {
-      play();
-    } else {
-      v.addEventListener('canplay', play, { once: true });
-      return () => v.removeEventListener('canplay', play);
-    }
+    if (v.readyState >= 2) { play(); }
+    else { v.addEventListener('canplay', play, { once: true }); return () => v.removeEventListener('canplay', play); }
   }, [lotteryState]);
 
-  const animationStyle = useCallback((rowIdx: number): React.CSSProperties => {
-    const baseSlow = rowIdx % 2 === 0 ? 32 : 40;
-    if (lotteryState === 'fast') return { animationDuration: `${baseSlow / 30}s` };
-    if (lotteryState === 'video') return { animationPlayState: 'paused', animationDuration: `${baseSlow}s` };
-    return { animationDuration: `${baseSlow}s` };
-  }, [lotteryState]);
+  // ---------- 待中奖池（供跑马灯使用）----------
+  const marqueePool = participants.filter((p) => !wonIds.has(p.idNumber.trim()));
+  const testDataOn = localStorage.getItem('draw_testdata_enabled') === '1';
 
   return (
     <PageLayout hideTopBar={lotteryState === 'video'} onResetDraw={handleResetDraw}>
-      <div className="flex h-full w-full flex-col justify-start gap-10 px-0 pt-[80px]">
-        {rows.map((row, rowIdx) => {
-          const direction = rowIdx % 2 === 0 ? 'marquee-left' : 'marquee-right';
-          const doubled = [...row, ...row];
-
-          return (
-            <div key={rowIdx} className="relative w-full">
-              <div className={['w-max', ROW_ROTATION].join(' ')}>
-                <div
-                  className={['flex items-center gap-x-5 gap-y-3 w-max', direction].join(' ')}
-                  style={animationStyle(rowIdx)}
-                >
-                  {doubled.map((p, i) => (
-                    <ParticipantCard
-                      key={i}
-                      avatar={p.avatar}
-                      name={p.name}
-                      idNumber={p.idNumber}
-                    />
-                  ))}
-                </div>
-              </div>
-            </div>
-          );
-        })}
+      {/* ====== 跑马灯区域 ====== */}
+      <div className="h-full w-full overflow-hidden pt-[55px]">
+        <StudentMarqueeWall students={marqueePool} fast={lotteryState === 'fast'} />
       </div>
 
-      {/* 视频层：始终挂载以预加载，非 video 状态透明隐藏 */}
+      {/* ====== 测试数据提示 ====== */}
+      {testDataOn && lotteryState !== 'video' && (
+        <div className="pointer-events-none fixed inset-0 z-[90] flex items-center justify-center">
+          <span className="rotate-[-12deg] text-[72px] font-black tracking-[12px] text-white drop-shadow-[0_2px_8px_rgba(0,0,0,0.5)]">
+            测试中...不代表实际结果
+          </span>
+        </div>
+      )}
+
+      {/* ====== 视频层 ====== */}
       <video
         ref={videoRef}
         src="/video/draw.mp4"
@@ -248,7 +196,7 @@ export const HomePage: React.FC = () => {
         onTimeUpdate={handleTimeUpdate}
       />
 
-      {/* 轮次标题：视频第 8 秒随揭晓出现 */}
+      {/* ====== 轮次标题 ====== */}
       {lotteryState === 'video' && revealed && winners.length > 0 && (
         <div className="pointer-events-none fixed inset-x-0 top-[20px] z-[120] flex items-center justify-center gap-[20px]">
           <img src="/xian.png" alt="" className="h-[20px] w-auto" />
@@ -259,7 +207,7 @@ export const HomePage: React.FC = () => {
         </div>
       )}
 
-      {/* 中奖者揭晓层：视频第 8 秒渲染 */}
+      {/* ====== 中奖者揭晓层 ====== */}
       {lotteryState === 'video' && revealed && winners.length > 0 && (
         <div
           className="perspective-1200 pointer-events-none fixed z-[110] flex flex-wrap content-start"

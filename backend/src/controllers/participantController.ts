@@ -28,16 +28,14 @@ router.get('/count', async (_req: Request, res: Response) => {
 // POST /api/participants/register-all — 将学生库中未录入的学生一键全部录入
 router.post('/register-all', async (_req: Request, res: Response) => {
   try {
-    const students = await studentService.findAll();
-    const existing = await participantService.findAll();
-    const existingIds = new Set(existing.map((p) => p.id_number.trim()));
-    const toInsert = students
-      .filter((s) => !existingIds.has(s.id_number.trim()))
-      .map((s) => ({
-        name: s.name,
-        id_number: s.id_number,
-        avatar: matchAvatarOrDefault(s.name, s.id_number),
-      }));
+    // 单次 LEFT JOIN 查询未录入学生，避免加载全量数据到内存，缩小并发竞态窗口
+    const students = await studentService.findNotRegistered();
+    const toInsert = students.map((s) => ({
+      name: s.name,
+      id_number: s.id_number,
+      avatar: matchAvatarOrDefault(s.name, s.id_number),
+    }));
+    // INSERT IGNORE 保证幂等：并发重复请求不会产生重复数据
     const affected = await participantService.bulkCreate(toInsert);
     res.json({ code: 0, data: { affected, total: toInsert.length } });
   } catch (err) {

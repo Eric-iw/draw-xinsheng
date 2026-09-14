@@ -8,13 +8,24 @@ import {
   PresetDTO,
 } from '@/services/api';
 
-type TabKey = 'students' | 'participants' | 'winners' | 'preset';
+// 测试数据结构（扩展了 class 字段，仅前端使用）
+interface TestParticipant {
+  id: number;
+  name: string;
+  id_number: string;
+  avatar: string;
+  created_at: string;
+  class?: string;
+}
+
+type TabKey = 'students' | 'participants' | 'winners' | 'preset' | 'testdata';
 
 const TABS: { key: TabKey; label: string }[] = [
   { key: 'students', label: '学生库' },
   { key: 'participants', label: '已录入信息' },
   { key: 'winners', label: '已中奖名单' },
   { key: 'preset', label: '拟定中奖人' },
+  { key: 'testdata', label: '测试数据' },
 ];
 
 const inputCls =
@@ -23,6 +34,7 @@ const btnPrimary =
   'rounded-md bg-[#3A6085] px-4 py-1.5 text-sm font-semibold text-white hover:bg-[#2f5070] transition disabled:opacity-60';
 const btnDanger =
   'rounded-md border border-red-300 px-3 py-1 text-xs text-red-600 hover:bg-red-50 transition';
+const PAGE_SIZE = 10; // 列表分页每页条数
 
 function fmtTime(s: string): string {
   const d = new Date(s);
@@ -38,6 +50,54 @@ const AdminPage: React.FC = () => {
   const [winners, setWinners] = useState<WinnerDTO[]>([]);
   const [presets, setPresets] = useState<PresetDTO[]>([]);
   const [tip, setTip] = useState<{ ok: boolean; text: string } | null>(null);
+  const [studentSearch, setStudentSearch] = useState('');
+  const [participantSearch, setParticipantSearch] = useState('');
+  const [participantPage, setParticipantPage] = useState(1);
+
+  // ---------- 测试数据（不写入数据库，仅前端展示用）----------
+  const TESTDATA_KEY = 'draw_testdata_enabled';
+  const [testDataEnabled, setTestDataEnabled] = useState<boolean>(
+    () => localStorage.getItem(TESTDATA_KEY) === '1'
+  );
+  const [testData, setTestData] = useState<TestParticipant[]>([]);
+
+  const toggleTestData = (on: boolean) => {
+    setTestDataEnabled(on);
+    localStorage.setItem(TESTDATA_KEY, on ? '1' : '0');
+    showTip(true, on ? '测试数据已开启（仅前端展示，不写入数据库）' : '测试数据已关闭');
+  };
+
+  const generateTestData = () => {
+    const surnames = ['王','李','张','刘','陈','杨','黄','赵','吴','周','徐','孙','马','朱','胡','林','郭','何','高','罗'];
+    const givens = ['伟','芳','娜','敏','静','丽','强','磊','军','洋','勇','艳','杰','娟','涛','明','超','霞','平','刚','桂英','文','辉','鹏','飞'];
+    const classes = ['信安2301','信安2302','网工2301','网工2302','软工2301','软工2302','数媒2301','计科2301'];
+    const list: TestParticipant[] = [];
+    for (let i = 0; i < 100; i++) {
+      const name = surnames[Math.floor(Math.random() * surnames.length)] +
+        givens[Math.floor(Math.random() * givens.length)] +
+        (Math.random() > 0.5 ? givens[Math.floor(Math.random() * givens.length)] : '');
+      const id_number = `2023${String(500000 + i).padStart(6, '0')}`;
+      list.push({
+        id: 100000 + i,
+        name,
+        id_number,
+        avatar: '/avatar.png',
+        created_at: new Date().toISOString(),
+        class: classes[Math.floor(Math.random() * classes.length)],
+      });
+    }
+    setTestData(list);
+    localStorage.setItem('draw_testdata_list', JSON.stringify(list));
+    showTip(true, `已生成 ${list.length} 条测试数据（不写入数据库）`);
+  };
+
+  // 组件挂载时从 localStorage 恢复测试数据
+  useEffect(() => {
+    const saved = localStorage.getItem('draw_testdata_list');
+    if (saved) {
+      try { setTestData(JSON.parse(saved)); } catch { /* ignore */ }
+    }
+  }, []);
 
   const showTip = (ok: boolean, text: string) => {
     setTip({ ok, text });
@@ -100,14 +160,32 @@ const AdminPage: React.FC = () => {
     () => new Set(winners.map((w) => w.id_number.trim())),
     [winners]
   );
+  // 已录入搜索过滤
+  const filteredParticipants = React.useMemo(() => {
+    if (!participantSearch) return participants;
+    return participants.filter((p) => {
+      const cls = classById.get(p.id_number.trim()) || '';
+      return (
+        p.name.includes(participantSearch) ||
+        p.id_number.includes(participantSearch) ||
+        cls.includes(participantSearch)
+      );
+    });
+  }, [participants, participantSearch, classById]);
+  // 搜索变化时回到第一页
+  useEffect(() => { setParticipantPage(1); }, [participantSearch]);
+  const participantTotalPages = Math.max(1, Math.ceil(filteredParticipants.length / PAGE_SIZE));
+  const participantCurrentPage = Math.min(participantPage, participantTotalPages);
+  const pagedParticipants = filteredParticipants.slice(
+    (participantCurrentPage - 1) * PAGE_SIZE,
+    participantCurrentPage * PAGE_SIZE
+  );
 
   // ---------- 学生库表单 ----------
   const [sName, setSName] = useState('');
   const [sId, setSId] = useState('');
   const [sClass, setSClass] = useState('');
   const [bulkText, setBulkText] = useState('');
-  const [studentSearch, setStudentSearch] = useState('');
-  const [participantSearch, setParticipantSearch] = useState('');
   const xlsxInputRef = useRef<HTMLInputElement | null>(null);
 
   // 学号单元格可能被 Excel 存为数字：安全整数直接转字符串，避免科学计数法
@@ -444,16 +522,7 @@ const AdminPage: React.FC = () => {
                   />
                   <span className="text-sm text-gray-500">
                     {participantSearch
-                      ? `匹配 ${
-                          participants.filter((p) => {
-                            const cls = classById.get(p.id_number.trim()) || '';
-                            return (
-                              p.name.includes(participantSearch) ||
-                              p.id_number.includes(participantSearch) ||
-                              cls.includes(participantSearch)
-                            );
-                          }).length
-                        } 条 / 共 ${participants.length} 条`
+                      ? `匹配 ${filteredParticipants.length} 条 / 共 ${participants.length} 条`
                       : `共 ${participants.length} 人已录入`}
                   </span>
                 </div>
@@ -481,17 +550,7 @@ const AdminPage: React.FC = () => {
                 </tr>
               </thead>
               <tbody>
-                {participants
-                  .filter((p) => {
-                    if (!participantSearch) return true;
-                    const cls = classById.get(p.id_number.trim()) || '';
-                    return (
-                      p.name.includes(participantSearch) ||
-                      p.id_number.includes(participantSearch) ||
-                      cls.includes(participantSearch)
-                    );
-                  })
-                  .map((p) => (
+                {pagedParticipants.map((p) => (
                   <tr key={p.id} className="border-b last:border-0">
                     <td className="py-2 pr-4">
                       <img src={p.avatar} alt="" className="h-9 w-9 rounded-full object-cover" />
@@ -514,19 +573,51 @@ const AdminPage: React.FC = () => {
                     </td>
                   </tr>
                 ))}
-                {participants.filter((p) => {
-                  if (!participantSearch) return true;
-                  const cls = classById.get(p.id_number.trim()) || '';
-                  return (
-                    p.name.includes(participantSearch) ||
-                    p.id_number.includes(participantSearch) ||
-                    cls.includes(participantSearch)
-                  );
-                }).length === 0 && (
+                {filteredParticipants.length === 0 && (
                   <tr><td colSpan={6} className="py-8 text-center text-gray-400">{participants.length === 0 ? '暂无录入信息' : '无匹配结果'}</td></tr>
                 )}
               </tbody>
             </table>
+
+            {/* 分页控件 */}
+            {filteredParticipants.length > 0 && (
+              <div className="mt-4 flex items-center justify-between text-sm">
+                <span className="text-gray-500">
+                  第 {participantCurrentPage} / {participantTotalPages} 页，每页 {PAGE_SIZE} 条
+                </span>
+                <div className="flex items-center gap-2">
+                  <button
+                    className="rounded border border-gray-300 px-3 py-1 text-gray-600 hover:bg-gray-100 disabled:opacity-40"
+                    onClick={() => setParticipantPage((p) => Math.max(1, p - 1))}
+                    disabled={participantCurrentPage <= 1}
+                  >
+                    上一页
+                  </button>
+                  {Array.from({ length: participantTotalPages }, (_, i) => i + 1)
+                    .filter((p) => p === 1 || p === participantTotalPages || Math.abs(p - participantCurrentPage) <= 1)
+                    .map((p, idx, arr) => (
+                      <React.Fragment key={p}>
+                        {idx > 0 && arr[idx - 1] !== p - 1 && <span className="text-gray-400">…</span>}
+                        <button
+                          className={`rounded px-3 py-1 ${
+                            p === participantCurrentPage ? 'bg-[#3A6085] text-white' : 'border border-gray-300 text-gray-600 hover:bg-gray-100'
+                          }`}
+                          onClick={() => setParticipantPage(p)}
+                        >
+                          {p}
+                        </button>
+                      </React.Fragment>
+                    ))}
+                  <button
+                    className="rounded border border-gray-300 px-3 py-1 text-gray-600 hover:bg-gray-100 disabled:opacity-40"
+                    onClick={() => setParticipantPage((p) => Math.min(participantTotalPages, p + 1))}
+                    disabled={participantCurrentPage >= participantTotalPages}
+                  >
+                    下一页
+                  </button>
+                </div>
+              </div>
+            )}
             </div>
           )}
 
@@ -729,13 +820,100 @@ const AdminPage: React.FC = () => {
               </table>
             </div>
           )}
+
+          {/* ============ 测试数据 ============ */}
+          {tab === 'testdata' && (
+            <div>
+              <div className="mb-5 flex items-center justify-between rounded-md border border-gray-200 bg-gray-50 p-4">
+                <div>
+                  <h2 className="text-base font-bold text-gray-800">测试数据（不写入数据库）</h2>
+                  <p className="mt-1 text-xs text-gray-500">
+                    生成 100 条虚拟学生数据，仅在前端跑马灯中展示，用于演示效果。开关状态保存在本地浏览器。
+                  </p>
+                </div>
+                <div className="flex items-center gap-4">
+                  <span className={`text-sm font-semibold ${testDataEnabled ? 'text-green-600' : 'text-gray-400'}`}>
+                    {testDataEnabled ? '已开启' : '已关闭'}
+                  </span>
+                  {/* 开关 */}
+                  <button
+                    onClick={() => toggleTestData(!testDataEnabled)}
+                    className={`relative h-7 w-12 rounded-full transition ${
+                      testDataEnabled ? 'bg-green-500' : 'bg-gray-300'
+                    }`}
+                  >
+                    <span
+                      className={`absolute top-1 h-5 w-5 rounded-full bg-white shadow transition-all ${
+                        testDataEnabled ? 'left-6' : 'left-1'
+                      }`}
+                    />
+                  </button>
+                </div>
+              </div>
+
+              <div className="mb-4 flex gap-3">
+                <button className={btnPrimary} onClick={generateTestData}>
+                  {testData.length ? '重新生成 100 条' : '生成 100 条测试数据'}
+                </button>
+                {testData.length > 0 && (
+                  <button
+                    className={btnDanger}
+                    onClick={() => {
+                      setTestData([]);
+                      localStorage.removeItem('draw_testdata_list');
+                      showTip(true, '已清除测试数据');
+                    }}
+                  >
+                    清除测试数据
+                  </button>
+                )}
+                {testData.length > 0 && (
+                  <span className="self-center text-sm text-gray-500">
+                    当前共 {testData.length} 条
+                  </span>
+                )}
+              </div>
+
+              {testData.length > 0 && (
+                <table className="w-full text-left text-sm">
+                  <thead>
+                    <tr className="border-b text-gray-500">
+                      <th className="py-2 pr-4">头像</th>
+                      <th className="py-2 pr-4">姓名</th>
+                      <th className="py-2 pr-4">学号</th>
+                      <th className="py-2 pr-4">班级</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {testData.slice(0, 20).map((p) => (
+                      <tr key={p.id} className="border-b last:border-0">
+                        <td className="py-2 pr-4">
+                          <img src={p.avatar} alt="" className="h-9 w-9 rounded-full object-cover" />
+                        </td>
+                        <td className="py-2 pr-4 font-semibold">{p.name}</td>
+                        <td className="py-2 pr-4 tabular-nums">{p.id_number}</td>
+                        <td className="py-2 pr-4">{p.class || '—'}</td>
+                      </tr>
+                    ))}
+                    {testData.length > 20 && (
+                      <tr>
+                        <td colSpan={4} className="py-3 text-center text-xs text-gray-400">
+                          仅展示前 20 条，共 {testData.length} 条测试数据
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          )}
         </div>
       </div>
     </div>
   );
 };
 
-// 学生库表格（带是否已录入标记）
+// 学生库表格（带是否已录入标记 + 分页）
 const StudentTable: React.FC<{
   students: StudentDTO[];
   search: string;
@@ -745,9 +923,16 @@ const StudentTable: React.FC<{
   onAddPreset: (id_number: string) => Promise<void>;
   onRegister: (name: string, id_number: string) => Promise<void>;
 }> = ({ students, search, onSearchChange, registeredIds, onDelete, onAddPreset, onRegister }) => {
+  const [page, setPage] = useState(1);
   const filtered = students.filter(
     (s) => !search || s.name.includes(search) || s.id_number.includes(search) || (s.class && s.class.includes(search))
   );
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const currentPage = Math.min(page, totalPages);
+  const paged = filtered.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
+
+  // 搜索变化时回到第一页
+  useEffect(() => { setPage(1); }, [search]);
 
   return (
     <div>
@@ -774,7 +959,7 @@ const StudentTable: React.FC<{
           </tr>
         </thead>
         <tbody>
-          {filtered.map((s) => (
+          {paged.map((s) => (
             <tr key={s.id} className="border-b last:border-0">
               <td className="py-2 pr-4">
                 {s.avatar ? (
@@ -831,6 +1016,46 @@ const StudentTable: React.FC<{
           )}
         </tbody>
       </table>
+
+      {/* 分页控件 */}
+      {filtered.length > 0 && (
+        <div className="mt-4 flex items-center justify-between text-sm">
+          <span className="text-gray-500">
+            第 {currentPage} / {totalPages} 页，每页 {PAGE_SIZE} 条
+          </span>
+          <div className="flex items-center gap-2">
+            <button
+              className="rounded border border-gray-300 px-3 py-1 text-gray-600 hover:bg-gray-100 disabled:opacity-40"
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+              disabled={currentPage <= 1}
+            >
+              上一页
+            </button>
+            {Array.from({ length: totalPages }, (_, i) => i + 1)
+              .filter((p) => p === 1 || p === totalPages || Math.abs(p - currentPage) <= 1)
+              .map((p, idx, arr) => (
+                <React.Fragment key={p}>
+                  {idx > 0 && arr[idx - 1] !== p - 1 && <span className="text-gray-400">…</span>}
+                  <button
+                    className={`rounded px-3 py-1 ${
+                      p === currentPage ? 'bg-[#3A6085] text-white' : 'border border-gray-300 text-gray-600 hover:bg-gray-100'
+                    }`}
+                    onClick={() => setPage(p)}
+                  >
+                    {p}
+                  </button>
+                </React.Fragment>
+              ))}
+            <button
+              className="rounded border border-gray-300 px-3 py-1 text-gray-600 hover:bg-gray-100 disabled:opacity-40"
+              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+              disabled={currentPage >= totalPages}
+            >
+              下一页
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

@@ -50,4 +50,15 @@ export const studentService = {
     const [result] = await pool.query<ResultSetHeader>('DELETE FROM students');
     return result.affectedRows;
   },
+
+  // 查询尚未录入的学生（LEFT JOIN，单次查询，减少并发竞态窗口）
+  async findNotRegistered(): Promise<Student[]> {
+    const [rows] = await pool.query<RowDataPacket[]>(
+      `SELECT s.* FROM students s
+       LEFT JOIN participants p ON p.id_number = s.id_number
+       WHERE p.id IS NULL
+       ORDER BY s.id ASC`
+    );
+    return rows as Student[];
+  },
 };
