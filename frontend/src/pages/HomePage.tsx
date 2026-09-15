@@ -98,7 +98,8 @@ export const HomePage: React.FC = () => {
     if (testOn) {
       // 测试模式：不请求已录入/中奖/轮次接口，全部使用本地数据
       const config = await api.getConfig().catch(() => ({ maxRounds: 3 }));
-      setMaxRounds(config.maxRounds || 3);
+      const mr = config.maxRounds || 3;
+      setMaxRounds(mr);
 
       let saved = safeGet(TESTDATA_LIST_KEY);
       if (!saved) {
@@ -122,7 +123,17 @@ export const HomePage: React.FC = () => {
       setParticipants(testList);
 
       const { round } = readTestProgress();
-      if (lotteryStateRef.current === 'slow') setCurrentRound(round);
+      // 上次测试已完成全部轮次且当前在首页（非抽奖进行中），重置以便重新开始
+      if (round >= mr && lotteryStateRef.current === 'slow') {
+        testRoundRef.current = 0;
+        testWonIdsRef.current = new Set();
+        setTestWonIds(new Set());
+        safeRemove(TESTDATA_ROUND_KEY);
+        safeRemove(TESTDATA_WON_KEY);
+        setCurrentRound(0);
+      } else if (lotteryStateRef.current === 'slow') {
+        setCurrentRound(round);
+      }
       return;
     }
 
@@ -292,11 +303,11 @@ export const HomePage: React.FC = () => {
         <StudentMarqueeWall students={marqueePool} fast={lotteryState === 'fast'} />
       </div>
 
-      {/* ====== 测试数据提示 ====== */}
-      {testDataOn && lotteryState !== 'video' && (
-        <div className="pointer-events-none fixed inset-0 z-[90] flex items-center justify-center">
+      {/* ====== 测试数据提示（测试模式开启时始终显示在最顶层） ====== */}
+      {testDataOn && (
+        <div className="pointer-events-none fixed inset-0 z-[130] flex items-center justify-center">
           <span className="rotate-[-12deg] text-[72px] font-black tracking-[12px] text-white drop-shadow-[0_2px_8px_rgba(0,0,0,0.5)]">
-            测试中...不代表实际结果
+            测试中...不代表实际结果（数据为模拟数据）
           </span>
         </div>
       )}

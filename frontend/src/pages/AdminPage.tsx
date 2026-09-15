@@ -13,6 +13,8 @@ import {
   safeRemove,
   TESTDATA_ENABLED_KEY,
   TESTDATA_LIST_KEY,
+  TESTDATA_ROUND_KEY,
+  TESTDATA_WON_KEY,
 } from '@/utils/storage';
 import { generateTestStudents } from '@/utils/testData';
 
@@ -88,8 +90,11 @@ const AdminPage: React.FC = () => {
   const toggleTestData = (on: boolean) => {
     setTestDataEnabled(on);
     safeSet(TESTDATA_ENABLED_KEY, on ? '1' : '0');
-    // 打开开关时若尚未生成数据，自动生成 100 条
-    if (on && !safeGet(TESTDATA_LIST_KEY)) {
+    if (on) {
+      // 重置测试轮次和已中奖记录，防止上次测试残留导致 currentRound >= maxRounds 卡住
+      safeRemove(TESTDATA_ROUND_KEY);
+      safeRemove(TESTDATA_WON_KEY);
+      // 每次开启都重新生成数据，保证干净状态
       generateTestData();
     }
     // 同标签页通知首页立即刷新（storage 事件只在跨标签页触发）
