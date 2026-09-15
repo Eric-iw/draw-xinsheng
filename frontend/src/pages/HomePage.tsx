@@ -316,9 +316,11 @@ export const HomePage: React.FC = () => {
       <video
         ref={videoRef}
         src="/video/draw.mp4"
-        className={`fixed inset-0 h-full w-full object-cover transition-none ${
+        className={`fixed inset-0 h-full w-full object-cover transition-none cursor-default ${
           lotteryState === 'video' ? 'z-[100] opacity-100' : '-z-[1] opacity-0 pointer-events-none'
         }`}
+        controls={false}
+        disablePictureInPicture
         playsInline
         preload="auto"
         onTimeUpdate={handleTimeUpdate}
