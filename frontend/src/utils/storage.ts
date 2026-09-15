@@ -45,3 +45,8 @@ export const TESTDATA_ENABLED_KEY = 'draw_testdata_enabled';
 export const TESTDATA_LIST_KEY = 'draw_testdata_list';
 export const TESTDATA_ROUND_KEY = 'draw_test_round';
 export const TESTDATA_WON_KEY = 'draw_test_won';
+
+// 后台控制指令（AdminPage 写入 → HomePage 监听执行）
+export const CONTROL_CMD_KEY = 'draw_control_cmd';
+// 首页状态上报（HomePage 写入 → AdminPage 轮询展示）
+export const CONTROL_STATE_KEY = 'draw_control_state';

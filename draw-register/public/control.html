@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>抽奖控制</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f5f5f5; color: #333; min-height: 100vh; padding: 16px; }
+  .card { background: #fff; border-radius: 12px; padding: 16px; margin-bottom: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+  .card h2 { font-size: 14px; color: #888; margin-bottom: 12px; }
+  .status-row { display: flex; justify-content: space-between; align-items: center; padding: 6px 0; font-size: 14px; }
+  .status-label { color: #888; }
+  .status-value { font-weight: 600; }
+  .btn-row { display: flex; gap: 10px; flex-wrap: wrap; }
+  .btn { flex: 1; min-width: 100px; padding: 14px 12px; border: none; border-radius: 10px; font-size: 14px; font-weight: 700; color: #fff; cursor: pointer; transition: opacity 0.15s; -webkit-tap-highlight-color: transparent; }
+  .btn:active { opacity: 0.7; }
+  .btn:disabled { background: #d1d5db !important; cursor: not-allowed; opacity: 1; }
+  .btn-amber { background: #f59e0b; }
+  .btn-indigo { background: #6366f1; }
+  .btn-green { background: #22c55e; }
+  .btn-red { background: #ef4444; }
+  .btn-full { flex: none; width: 100%; }
+  .round-input-row { display: flex; gap: 10px; align-items: center; margin-top: 12px; }
+  .round-input-row input { flex: 1; padding: 10px 12px; border: 1.5px solid #d1d5db; border-radius: 8px; font-size: 15px; text-align: center; outline: none; }
+  .round-input-row input:focus { border-color: #6366f1; }
+  .round-input-row button { padding: 10px 20px; border: none; border-radius: 8px; background: #6366f1; color: #fff; font-size: 14px; font-weight: 600; cursor: pointer; }
+  .round-input-row button:active { opacity: 0.7; }
+  .toast { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: rgba(0,0,0,0.75); color: #fff; padding: 12px 24px; border-radius: 8px; font-size: 14px; z-index: 999; pointer-events: none; opacity: 0; transition: opacity 0.3s; }
+  .toast.show { opacity: 1; }
+  .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; }
+  .dot-slow { background: #9ca3af; }
+  .dot-fast { background: #f59e0b; }
+  .dot-video { background: #6366f1; }
+  .offline { color: #ef4444; font-size: 12px; }
+</style>
+</head>
+<body>
+
+<div class="card">
+  <h2>实时状态</h2>
+  <div class="status-row">
+    <span class="status-label">当前阶段</span>
+    <span class="status-value" id="s-state"><span class="dot dot-slow"></span>等待中</span>
+  </div>
+  <div class="status-row">
+    <span class="status-label">已完成轮次</span>
+    <span class="status-value" id="s-round">0 / 3</span>
+  </div>
+  <div class="status-row">
+    <span class="status-label">中奖揭晓</span>
+    <span class="status-value" id="s-revealed">未揭晓</span>
+  </div>
+  <div class="status-row" id="s-video-row" style="display:none">
+    <span class="status-label">视频播放</span>
+    <span class="status-value" id="s-video">播放中</span>
+  </div>
+  <div id="s-offline" class="offline" style="display:none;margin-top:8px">未连接到首页</div>
+</div>
+
+<div class="card">
+  <h2>控制指令</h2>
+  <div class="btn-row">
+    <button class="btn btn-amber" id="btn-start" disabled>开始加速</button>
+    <button class="btn btn-indigo" id="btn-draw" disabled>触发抽奖</button>
+  </div>
+  <div class="btn-row" style="margin-top:10px">
+    <button class="btn btn-green" id="btn-reset" disabled>下一轮</button>
+  </div>
+</div>
+
+<div class="card">
+  <h2>高级操作</h2>
+  <div class="btn-row">
+    <button class="btn btn-red btn-full" id="btn-resetall">重置全部抽奖</button>
+  </div>
+  <div class="round-input-row">
+    <input type="number" id="round-input" min="0" max="20" placeholder="输入轮次号">
+    <button id="btn-setround">指定轮次</button>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+(function() {
+  var API = '/api/lottery';
+  var state = { lotteryState: 'slow', currentRound: 0, maxRounds: 3, revealed: false, videoEnded: false };
+  var lastCmdTs = 0;
+  var pollTimer = null;
+
+  // ---- DOM ----
+  var elState = document.getElementById('s-state');
+  var elRound = document.getElementById('s-round');
+  var elRevealed = document.getElementById('s-revealed');
+  var elVideoRow = document.getElementById('s-video-row');
+  var elVideo = document.getElementById('s-video');
+  var elOffline = document.getElementById('s-offline');
+  var btnStart = document.getElementById('btn-start');
+  var btnDraw = document.getElementById('btn-draw');
+  var btnReset = document.getElementById('btn-reset');
+  var btnResetAll = document.getElementById('btn-resetall');
+  var btnSetRound = document.getElementById('btn-setround');
+  var roundInput = document.getElementById('round-input');
+
+  var stateLabels = { slow: '首页跑马灯', fast: '跑马灯加速中', video: '视频播放中' };
+  var dotClasses = { slow: 'dot-slow', fast: 'dot-fast', video: 'dot-video' };
+
+  function renderUI() {
+    var s = state.lotteryState;
+    elState.innerHTML = '<span class="dot ' + (dotClasses[s] || 'dot-slow') + '"></span>' + (stateLabels[s] || s);
+    elRound.textContent = state.currentRound + ' / ' + state.maxRounds;
+    elRevealed.textContent = state.revealed ? '已揭晓' : '未揭晓';
+    elRevealed.style.color = state.revealed ? '#22c55e' : '#888';
+
+    if (s === 'video') {
+      elVideoRow.style.display = 'flex';
+      elVideo.textContent = state.videoEnded ? '已播完' : '播放中';
+      elVideo.style.color = state.videoEnded ? '#22c55e' : '#f59e0b';
+    } else {
+      elVideoRow.style.display = 'none';
+    }
+
+    // 按钮状态
+    btnStart.disabled = !(s === 'slow' && state.currentRound < state.maxRounds);
+    btnDraw.disabled = !(s === 'fast');
+    btnReset.disabled = !(s === 'video' && state.videoEnded);
+  }
+
+  function toast(msg) {
+    var t = document.getElementById('toast');
+    t.textContent = msg;
+    t.classList.add('show');
+    setTimeout(function() { t.classList.remove('show'); }, 1500);
+  }
+
+  // ---- 轮询状态 ----
+  async function poll() {
+    try {
+      var res = await fetch(API);
+      var json = await res.json();
+      if (json.code === 0) {
+        elOffline.style.display = 'none';
+        if (json.data.state) {
+          state = json.data.state;
+          renderUI();
+        }
+        if (json.data.maxRounds) {
+          state.maxRounds = json.data.maxRounds;
+          renderUI();
+        }
+      }
+    } catch (e) {
+      elOffline.style.display = 'block';
+    }
+  }
+
+  // ---- 发送指令 ----
+  async function sendCmd(cmd, round) {
+    try {
+      var body = { action: 'cmd', cmd: cmd };
+      if (round !== undefined) body.round = round;
+      var res = await fetch(API, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      var json = await res.json();
+      if (json.code === 0) {
+        toast('指令已发送');
+        // 乐观更新
+        if (cmd === 'start') { state.lotteryState = 'fast'; renderUI(); }
+        else if (cmd === 'draw') { state.lotteryState = 'video'; state.videoEnded = false; renderUI(); }
+        else if (cmd === 'reset') { state.lotteryState = 'slow'; state.currentRound++; state.revealed = false; state.videoEnded = false; renderUI(); }
+        else if (cmd === 'resetAll') { state.lotteryState = 'slow'; state.currentRound = 0; state.revealed = false; state.videoEnded = false; renderUI(); }
+        else if (cmd === 'setRound') { state.currentRound = round; state.lotteryState = 'slow'; renderUI(); }
+      } else {
+        toast(json.msg || '发送失败');
+      }
+    } catch (e) {
+      toast('网络错误');
+    }
+  }
+
+  // ---- 按钮事件 ----
+  btnStart.onclick = function() { sendCmd('start'); };
+  btnDraw.onclick = function() { sendCmd('draw'); };
+  btnReset.onclick = function() { sendCmd('reset'); };
+  btnResetAll.onclick = function() {
+    if (confirm('确定重置全部抽奖？将清空所有中奖记录并回到第0轮。')) {
+      sendCmd('resetAll');
+    }
+  };
+  btnSetRound.onclick = function() {
+    var v = parseInt(roundInput.value, 10);
+    if (isNaN(v) || v < 0 || v > 20) { toast('请输入 0-20 的轮次号'); return; }
+    sendCmd('setRound', v);
+  };
+
+  // ---- 启动 ----
+  renderUI();
+  poll();
+  pollTimer = setInterval(poll, 500);
+})();
+</script>
+</body>
+</html>

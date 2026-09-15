@@ -15,6 +15,8 @@ import {
   TESTDATA_LIST_KEY,
   TESTDATA_ROUND_KEY,
   TESTDATA_WON_KEY,
+  CONTROL_CMD_KEY,
+  CONTROL_STATE_KEY,
 } from '@/utils/storage';
 import { generateTestStudents } from '@/utils/testData';
 
@@ -28,7 +30,7 @@ interface TestParticipant {
   class?: string;
 }
 
-type TabKey = 'students' | 'participants' | 'winners' | 'preset' | 'testdata';
+type TabKey = 'students' | 'participants' | 'winners' | 'preset' | 'testdata' | 'control';
 
 const TABS: { key: TabKey; label: string }[] = [
   { key: 'students', label: '学生库' },
@@ -36,6 +38,7 @@ const TABS: { key: TabKey; label: string }[] = [
   { key: 'winners', label: '已中奖名单' },
   { key: 'preset', label: '拟定中奖人' },
   { key: 'testdata', label: '测试数据' },
+  { key: 'control', label: '抽奖控制' },
 ];
 
 const inputCls =
@@ -71,6 +74,63 @@ const AdminPage: React.FC = () => {
     () => safeGet(TESTDATA_ENABLED_KEY) === '1'
   );
   const [testData, setTestData] = useState<TestParticipant[]>([]);
+
+  // ---------- 抽奖控制（后台远程控制首页）----------
+  interface ControlState {
+    lotteryState: string;
+    currentRound: number;
+    maxRounds: number;
+    revealed: boolean;
+    videoEnded: boolean;
+  }
+  const defaultControlState: ControlState = {
+    lotteryState: 'slow', currentRound: 0, maxRounds: 3, revealed: false, videoEnded: false,
+  };
+  const [controlState, setControlState] = useState<ControlState>(defaultControlState);
+
+  // 轮询首页状态
+  useEffect(() => {
+    if (tab !== 'control') return;
+    const read = () => {
+      try {
+        const raw = safeGet(CONTROL_STATE_KEY);
+        if (raw) setControlState(JSON.parse(raw));
+      } catch { /* ignore */ }
+    };
+    read();
+    const timer = window.setInterval(read, 500);
+    return () => window.clearInterval(timer);
+  }, [tab]);
+
+  // 指定轮次输入
+  const [setRoundInput, setSetRoundInput] = useState('');
+
+  // 向首页发送控制指令（立即更新本地状态，给用户即时反馈）
+  const sendCommand = (cmd: string, round?: number) => {
+    const payload: Record<string, unknown> = { cmd, ts: Date.now() };
+    if (round !== undefined) payload.round = round;
+    safeSet(CONTROL_CMD_KEY, JSON.stringify(payload));
+    window.dispatchEvent(new CustomEvent('draw_control_cmd'));
+    setControlState(prev => {
+      if (cmd === 'start') return { ...prev, lotteryState: 'fast' };
+      if (cmd === 'draw') return { ...prev, lotteryState: 'video', videoEnded: false };
+      if (cmd === 'reset') return { ...prev, lotteryState: 'slow', currentRound: prev.currentRound + 1, revealed: false, videoEnded: false };
+      if (cmd === 'resetAll') return { ...prev, lotteryState: 'slow', currentRound: 0, revealed: false, videoEnded: false };
+      if (cmd === 'setRound' && typeof round === 'number') return { ...prev, lotteryState: 'slow', currentRound: round };
+      return prev;
+    });
+  };
+
+  const stateLabel: Record<string, string> = {
+    slow: '首页跑马灯（等待开始）',
+    fast: '跑马灯加速中',
+    video: '视频播放中',
+  };
+  const stateColor: Record<string, string> = {
+    slow: 'text-gray-600',
+    fast: 'text-amber-600',
+    video: 'text-blue-600',
+  };
 
   const generateTestData = () => {
     const list: TestParticipant[] = generateTestStudents(100).map((s, i) => ({
@@ -998,6 +1058,139 @@ const AdminPage: React.FC = () => {
                   </tbody>
                 </table>
               )}
+            </div>
+          )}
+
+          {/* ============ 抽奖控制 ============ */}
+          {tab === 'control' && (
+            <div>
+              {/* 状态卡片 */}
+              <div className="mb-6 rounded-lg border border-gray-200 bg-gray-50 p-5">
+                <h2 className="mb-3 text-base font-bold text-gray-800">首页实时状态</h2>
+                <div className="flex flex-wrap items-center gap-6 text-sm">
+                  <div>
+                    <span className="text-gray-500">当前阶段：</span>
+                    <span className={`font-semibold ${stateColor[controlState.lotteryState] || 'text-gray-600'}`}>
+                      {stateLabel[controlState.lotteryState] || controlState.lotteryState}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-gray-500">已完成轮次：</span>
+                    <span className="font-semibold text-gray-800">{controlState.currentRound}</span>
+                    <span className="text-gray-400"> / {controlState.maxRounds}</span>
+                  </div>
+                  <div>
+                    <span className="text-gray-500">中奖揭晓：</span>
+                    <span className={`font-semibold ${controlState.revealed ? 'text-green-600' : 'text-gray-400'}`}>
+                      {controlState.revealed ? '已揭晓' : '未揭晓'}
+                    </span>
+                  </div>
+                  {controlState.lotteryState === 'video' && (
+                    <div>
+                      <span className="text-gray-500">视频播放：</span>
+                      <span className={`font-semibold ${controlState.videoEnded ? 'text-green-600' : 'text-amber-600'}`}>
+                        {controlState.videoEnded ? '已播完' : '播放中'}
+                      </span>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* 控制按钮 */}
+              <div className="mb-6 flex flex-wrap gap-4">
+                {/* 开始加速：slow → fast */}
+                <button
+                  className={`rounded-lg px-6 py-3 text-sm font-bold text-white transition ${
+                    controlState.lotteryState === 'slow' && controlState.currentRound < controlState.maxRounds
+                      ? 'bg-amber-500 hover:bg-amber-600 shadow-md'
+                      : 'bg-gray-300 cursor-not-allowed'
+                  }`}
+                  disabled={controlState.lotteryState !== 'slow' || controlState.currentRound >= controlState.maxRounds}
+                  onClick={() => sendCommand('start')}
+                >
+                  开始加速（slow → fast）
+                </button>
+
+                {/* 触发抽奖：fast → video */}
+                <button
+                  className={`rounded-lg px-6 py-3 text-sm font-bold text-white transition ${
+                    controlState.lotteryState === 'fast'
+                      ? 'bg-indigo-500 hover:bg-indigo-600 shadow-md'
+                      : 'bg-gray-300 cursor-not-allowed'
+                  }`}
+                  disabled={controlState.lotteryState !== 'fast'}
+                  onClick={() => sendCommand('draw')}
+                >
+                  触发抽奖（fast → video）
+                </button>
+
+                {/* 回到首页：video → slow */}
+                <button
+                  className={`rounded-lg px-6 py-3 text-sm font-bold text-white transition ${
+                    controlState.lotteryState === 'video' && controlState.videoEnded
+                      ? 'bg-green-500 hover:bg-green-600 shadow-md'
+                      : 'bg-gray-300 cursor-not-allowed'
+                  }`}
+                  disabled={controlState.lotteryState !== 'video' || !controlState.videoEnded}
+                  onClick={() => sendCommand('reset')}
+                >
+                  回到首页（video → slow）
+                </button>
+              </div>
+
+              {/* 高级操作 */}
+              <div className="mb-6 rounded-lg border border-gray-200 bg-gray-50 p-5">
+                <h2 className="mb-3 text-base font-bold text-gray-800">高级操作</h2>
+                <div className="flex flex-wrap gap-4">
+                  <button
+                    className="rounded-lg bg-red-500 px-6 py-3 text-sm font-bold text-white shadow-md transition hover:bg-red-600"
+                    onClick={() => {
+                      if (window.confirm('确定重置全部抽奖？将清空所有中奖记录并回到第0轮。')) {
+                        sendCommand('resetAll');
+                      }
+                    }}
+                  >
+                    重置全部抽奖
+                  </button>
+                </div>
+                <div className="mt-4 flex items-center gap-3">
+                  <span className="text-sm text-gray-600">指定当前轮次：</span>
+                  <input
+                    type="number"
+                    min={0}
+                    max={20}
+                    value={setRoundInput}
+                    onChange={(e) => setSetRoundInput(e.target.value)}
+                    className="w-20 rounded-md border border-gray-300 px-3 py-2 text-center text-sm focus:border-indigo-500 focus:outline-none"
+                    placeholder="0"
+                  />
+                  <button
+                    className="rounded-lg bg-indigo-500 px-4 py-2 text-sm font-bold text-white transition hover:bg-indigo-600"
+                    onClick={() => {
+                      const v = parseInt(setRoundInput, 10);
+                      if (isNaN(v) || v < 0 || v > 20) return;
+                      sendCommand('setRound', v);
+                    }}
+                  >
+                    设置
+                  </button>
+                </div>
+              </div>
+
+              {/* 说明 */}
+              <div className="rounded-md border border-blue-200 bg-blue-50 p-4 text-sm text-gray-700">
+                <p className="mb-2 font-semibold text-gray-800">操作流程：</p>
+                <ol className="list-inside list-decimal space-y-1">
+                  <li>点击 <b>开始加速</b>：跑马灯加速滚动</li>
+                  <li>点击 <b>触发抽奖</b>：进入视频播放 + 后端抽奖</li>
+                  <li>视频第 8 秒自动揭晓中奖卡片</li>
+                  <li>视频播放完毕后，点击 <b>回到首页</b>：回到慢速跑马灯</li>
+                  <li>重复以上步骤进行下一轮抽奖</li>
+                </ol>
+                <p className="mt-3 text-xs text-gray-500">
+                  提示：也可以在首页直接按空格键控制，与此处按钮功能一致。
+                </p>
+              </div>
             </div>
           )}
         </div>

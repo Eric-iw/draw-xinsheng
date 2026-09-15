@@ -11,8 +11,14 @@ import {
   TESTDATA_LIST_KEY,
   TESTDATA_ROUND_KEY,
   TESTDATA_WON_KEY,
+  CONTROL_CMD_KEY,
+  CONTROL_STATE_KEY,
 } from '@/utils/storage';
 import { generateTestStudents } from '@/utils/testData';
+
+// Vercel 部署的抽奖控制 API 地址（部署后改为实际 URL，如 https://xxx.vercel.app）
+// 留空则跳过远程轮询，仅使用 localStorage 同标签页通信
+const LOTTERY_API_BASE = '';
 
 interface Participant {
   avatar: string;
@@ -173,6 +179,34 @@ export const HomePage: React.FC = () => {
 
   useEffect(() => { lotteryStateRef.current = lotteryState; }, [lotteryState]);
 
+  // ---------- 向后台上报首页状态（供抽奖控制页轮询）----------
+  const reportState = useCallback(() => {
+    const state = {
+      lotteryState: lotteryStateRef.current,
+      currentRound: currentRound,
+      maxRounds: maxRounds,
+      revealed: revealedRef.current,
+      videoEnded: videoEndedRef.current,
+    };
+    safeSet(CONTROL_STATE_KEY, JSON.stringify(state));
+    // 同步到远程 API（跨设备控制）
+    if (LOTTERY_API_BASE) {
+      fetch(`${LOTTERY_API_BASE}/api/lottery`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'state', state }),
+      }).catch(() => {});
+    }
+  }, [currentRound, maxRounds]);
+
+  // 状态变化时立即上报
+  useEffect(() => { reportState(); }, [lotteryState, currentRound, maxRounds, revealed, reportState]);
+  // videoEndedRef 变化无法驱动 effect，用定时器兜底
+  useEffect(() => {
+    const timer = window.setInterval(reportState, 1000);
+    return () => window.clearInterval(timer);
+  }, [reportState]);
+
   // ---------- 抽奖逻辑 ----------
   const REVEAL_SECOND = 8;
   const handleTimeUpdate = useCallback(() => {
@@ -237,6 +271,78 @@ export const HomePage: React.FC = () => {
     videoEndedRef.current = false;
     setRevealed(false);
     setWinners([]);
+  }, []);
+
+  // ---------- 监听后台控制指令（必须在 drawRound/goHome 声明之后）----------
+  useEffect(() => {
+    const onCmd = () => {
+      try {
+        const raw = safeGet(CONTROL_CMD_KEY);
+        if (!raw) return;
+        const { cmd, ts, round: cmdRound } = JSON.parse(raw) as { cmd: string; ts: number; round?: number };
+        // 忽略超过 5 秒的旧指令
+        if (Date.now() - ts > 5000) return;
+
+        if (cmd === 'start' && lotteryStateRef.current === 'slow' && currentRound < maxRounds) {
+          setLotteryState('fast');
+        } else if (cmd === 'draw' && lotteryStateRef.current === 'fast') {
+          setLotteryState('video');
+          void drawRound();
+        } else if (cmd === 'reset' && lotteryStateRef.current === 'video' && videoEndedRef.current) {
+          goHome();
+        } else if (cmd === 'resetAll') {
+          // 重置全部抽奖（远程控制）
+          drawingRef.current = false;
+          if (testDataOnRef.current) {
+            testRoundRef.current = 0;
+            testWonIdsRef.current = new Set();
+            setTestWonIds(new Set());
+            safeRemove(TESTDATA_ROUND_KEY);
+            safeRemove(TESTDATA_WON_KEY);
+          } else {
+            void api.clearWinners();
+          }
+          setCurrentRound(0);
+          goHome();
+        } else if (cmd === 'setRound' && typeof cmdRound === 'number') {
+          // 指定当前轮次（远程控制）
+          setCurrentRound(cmdRound);
+          if (lotteryStateRef.current !== 'slow') goHome();
+        }
+      } catch { /* ignore */ }
+    };
+    window.addEventListener('draw_control_cmd', onCmd);
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === CONTROL_CMD_KEY) onCmd();
+    };
+    window.addEventListener('storage', onStorage);
+    return () => {
+      window.removeEventListener('draw_control_cmd', onCmd);
+      window.removeEventListener('storage', onStorage);
+    };
+  }, [currentRound, maxRounds, drawRound, goHome]);
+
+  // ---------- 轮询远程控制 API（跨设备控制）----------
+  useEffect(() => {
+    if (!LOTTERY_API_BASE) return;
+    let lastApiTs = 0;
+    const poll = async () => {
+      try {
+        const res = await fetch(`${LOTTERY_API_BASE}/api/lottery`);
+        const json = await res.json();
+        if (json.code === 0 && json.data.command) {
+          const { ts } = json.data.command;
+          if (ts > lastApiTs) {
+            lastApiTs = ts;
+            // 转写到 localStorage，复用已有命令处理逻辑
+            safeSet(CONTROL_CMD_KEY, JSON.stringify({ ...json.data.command, ts: Date.now() }));
+            window.dispatchEvent(new CustomEvent('draw_control_cmd'));
+          }
+        }
+      } catch { /* ignore */ }
+    };
+    const timer = window.setInterval(poll, 500);
+    return () => window.clearInterval(timer);
   }, []);
 
   const handleResetDraw = useCallback(async () => {
