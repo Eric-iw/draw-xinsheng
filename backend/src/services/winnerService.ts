@@ -27,7 +27,7 @@ export const winnerService = {
    * - 已中奖者不会再次中奖（LEFT JOIN winners 过滤）
    * - 事务内写入 winners 并清除已中奖的拟定，返回本轮中奖名单（含班级）
    */
-  async draw(count: number): Promise<{ round_no: number; winners: DrawResult[] }> {
+  async draw(count: number, targetRound?: number): Promise<{ round_no: number; winners: DrawResult[] }> {
     const conn: PoolConnection = await pool.getConnection();
     try {
       await conn.beginTransaction();
@@ -68,7 +68,9 @@ export const winnerService = {
       const [roundRows] = await conn.query<RowDataPacket[]>(
         'SELECT COALESCE(MAX(round_no), 0) + 1 AS next FROM winners'
       );
-      const roundNo = (roundRows[0] as { next: number }).next;
+      const roundNo = targetRound && targetRound >= 1
+        ? targetRound
+        : (roundRows[0] as { next: number }).next;
 
       const values = picked.map((p) => [
         p.id,
@@ -142,6 +144,15 @@ export const winnerService = {
     );
     const [rows] = await pool.query<RowDataPacket[]>('SELECT * FROM winners WHERE id = ?', [result.insertId]);
     return (rows as Winner[])[0];
+  },
+
+  /** 删除指定轮次的中奖记录（用于指定轮次重抽） */
+  async deleteRound(roundNo: number): Promise<number> {
+    const [result] = await pool.query<ResultSetHeader>(
+      'DELETE FROM winners WHERE round_no = ?',
+      [roundNo]
+    );
+    return result.affectedRows;
   },
 
   async clearAll(): Promise<void> {

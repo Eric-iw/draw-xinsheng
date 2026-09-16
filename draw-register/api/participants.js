@@ -2,12 +2,17 @@
 // 校验规则：学号必须在学生库 + 姓名匹配 + 学号不可重复（DB 唯一约束兜底）
 // 高并发优化：模块级连接池复用于热启动实例，避免每次请求新建连接
 const mysql = require('mysql2/promise');
-const manifest = require('../avatars.json');
+let manifest = [];
+try {
+  const loaded = require('../avatars.json');
+  manifest = Array.isArray(loaded) ? loaded : (loaded ? [loaded] : []);
+} catch (e) {
+  manifest = [];
+}
 
 function matchAvatar(name, idNumber) {
-  const list = Array.isArray(manifest) ? manifest : [manifest];
   const prefix = `${name}-${idNumber}.`;
-  const hit = list.find((f) => f.startsWith(prefix));
+  const hit = manifest.find((f) => typeof f === 'string' && f.startsWith(prefix));
   return hit ? `/uploads/stuimg/${hit}` : null;
 }
 

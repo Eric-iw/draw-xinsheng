@@ -120,12 +120,14 @@ export const api = {
     }),
   getCurrentRound: () => request<number>('/api/winners/current-round'),
   // 执行一轮抽奖（后端排除已中奖、优先拟定），返回本轮中奖名单
-  drawWinners: (count = 10) =>
+  drawWinners: (count = 10, targetRound?: number) =>
     request<DrawResultDTO>('/api/winners/draw', {
       method: 'POST',
-      body: JSON.stringify({ count }),
+      body: JSON.stringify({ count, targetRound }),
     }),
   clearWinners: () => request<{ msg?: string }>('/api/winners', { method: 'DELETE' }),
+  clearRound: (roundNo: number) =>
+    request<{ affected: number }>(`/api/winners/from/${roundNo}`, { method: 'DELETE' }),
 
   // 系统配置（抽奖总轮次等）
   getConfig: () => request<{ maxRounds: number }>('/api/settings'),

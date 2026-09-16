@@ -37,7 +37,8 @@ router.get('/current-round', async (_req: Request, res: Response) => {
 router.post('/draw', async (req: Request, res: Response) => {
   try {
     const count = Math.min(50, Math.max(1, Number(req.body.count) || 10));
-    const result = await winnerService.draw(count);
+    const targetRound = req.body.targetRound ? Number(req.body.targetRound) : undefined;
+    const result = await winnerService.draw(count, targetRound);
     res.json({ code: 0, data: result });
   } catch (err) {
     res.status(500).json({ code: 1, msg: (err as Error).message });
@@ -62,6 +63,21 @@ router.post('/', async (req: Request, res: Response) => {
       round_no,
     });
     res.json({ code: 0, data: w });
+  } catch (err) {
+    res.status(500).json({ code: 1, msg: (err as Error).message });
+  }
+});
+
+// DELETE /api/winners/from/:roundNo — 删除指定轮次及之后的中奖记录
+router.delete('/from/:roundNo', async (req: Request, res: Response) => {
+  try {
+    const roundNo = Number(req.params.roundNo);
+    if (!Number.isFinite(roundNo) || roundNo < 1) {
+      res.status(400).json({ code: 1, msg: '轮次号必须 >= 1' });
+      return;
+    }
+    const affected = await winnerService.deleteRound(roundNo);
+    res.json({ code: 0, data: { affected } });
   } catch (err) {
     res.status(500).json({ code: 1, msg: (err as Error).message });
   }

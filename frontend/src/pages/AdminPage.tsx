@@ -116,7 +116,7 @@ const AdminPage: React.FC = () => {
       if (cmd === 'draw') return { ...prev, lotteryState: 'video', videoEnded: false };
       if (cmd === 'reset') return { ...prev, lotteryState: 'slow', currentRound: prev.currentRound + 1, revealed: false, videoEnded: false };
       if (cmd === 'resetAll') return { ...prev, lotteryState: 'slow', currentRound: 0, revealed: false, videoEnded: false };
-      if (cmd === 'setRound' && typeof round === 'number') return { ...prev, lotteryState: 'slow', currentRound: round };
+      if (cmd === 'setRound' && typeof round === 'number') return { ...prev, lotteryState: 'slow', currentRound: round - 1 };
       return prev;
     });
   };
@@ -1157,7 +1157,7 @@ const AdminPage: React.FC = () => {
                   <span className="text-sm text-gray-600">指定当前轮次：</span>
                   <input
                     type="number"
-                    min={0}
+                    min={1}
                     max={20}
                     value={setRoundInput}
                     onChange={(e) => setSetRoundInput(e.target.value)}
@@ -1168,7 +1168,7 @@ const AdminPage: React.FC = () => {
                     className="rounded-lg bg-indigo-500 px-4 py-2 text-sm font-bold text-white transition hover:bg-indigo-600"
                     onClick={() => {
                       const v = parseInt(setRoundInput, 10);
-                      if (isNaN(v) || v < 0 || v > 20) return;
+                      if (isNaN(v) || v < 1 || v > controlState.maxRounds) return;
                       sendCommand('setRound', v);
                     }}
                   >

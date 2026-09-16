@@ -18,7 +18,7 @@ import { generateTestStudents } from '@/utils/testData';
 
 // Vercel 部署的抽奖控制 API 地址（部署后改为实际 URL，如 https://xxx.vercel.app）
 // 留空则跳过远程轮询，仅使用 localStorage 同标签页通信
-const LOTTERY_API_BASE = '';
+const LOTTERY_API_BASE = 'https://draw.inmoyo.cn'.replace(/\/+$/, '');
 
 interface Participant {
   avatar: string;
@@ -62,6 +62,12 @@ export const HomePage: React.FC = () => {
   const testRoundRef = useRef(0);
   const [testWonIds, setTestWonIds] = useState<Set<string>>(new Set());
   const testWonIdsRef = useRef<Set<string>>(new Set());
+  // 按轮次跟踪已中奖 ID（测试模式下支持单轮清除重抽）
+  const testRoundWinnersRef = useRef<Map<number, Set<string>>>(new Map());
+  // 指定轮次重抽：抽完后恢复原 currentRound
+  const savedCurrentRoundRef = useRef(0);
+  const overrideRoundAfterDrawRef = useRef(false);
+  const nextDrawRoundRef = useRef(0); // 正式模式指定轮次
 
   const [lotteryState, setLotteryState] = useState<'slow' | 'fast' | 'video'>('slow');
   const lotteryStateRef = useRef<'slow' | 'fast' | 'video'>('slow');
@@ -236,7 +242,7 @@ export const HomePage: React.FC = () => {
       }
 
       // ===== 正式模式：调用后端抽奖接口 =====
-      const result = await api.drawWinners(WINNER_COUNT);
+      const result = await api.drawWinners(WINNER_COUNT, nextDrawRoundRef.current || undefined);
       return {
         drawn: result.winners.map((w) => ({ avatar: w.avatar, name: w.name, idNumber: w.id_number, studentClass: w.class || '' })),
         roundNo: result.round_no,
@@ -250,7 +256,17 @@ export const HomePage: React.FC = () => {
   const applyDraw = useCallback((payload: DrawPayload | null) => {
     const drawn = payload ? payload.drawn : [];
     setWinners(drawn);
-    if (payload && payload.roundNo > 0) setCurrentRound(payload.roundNo);
+    if (payload && payload.roundNo > 0) {
+      // 指定轮次重抽：抽完后恢复原 currentRound，而不是设成重抽轮次
+      if (overrideRoundAfterDrawRef.current) {
+        overrideRoundAfterDrawRef.current = false;
+        setCurrentRound(savedCurrentRoundRef.current);
+      } else {
+        setCurrentRound(payload.roundNo);
+      }
+    }
+    // 清除指定轮次标记
+    nextDrawRoundRef.current = 0;
     // 测试模式：把本轮中奖者和轮次写入本地，跑马灯下一轮自动排除
     if (testDataOnRef.current && payload) {
       const nextWon = new Set(testWonIdsRef.current);
@@ -258,6 +274,9 @@ export const HomePage: React.FC = () => {
       testWonIdsRef.current = nextWon;
       setTestWonIds(nextWon);
       testRoundRef.current = payload.roundNo;
+      // 按轮次记录已中奖 ID
+      const roundIds = new Set(drawn.map((d) => d.idNumber.trim()));
+      testRoundWinnersRef.current.set(payload.roundNo, roundIds);
       safeSet(TESTDATA_ROUND_KEY, String(payload.roundNo));
       safeSet(TESTDATA_WON_KEY, JSON.stringify(Array.from(nextWon)));
     }
@@ -304,9 +323,28 @@ export const HomePage: React.FC = () => {
           }
           setCurrentRound(0);
           goHome();
-        } else if (cmd === 'setRound' && typeof cmdRound === 'number') {
-          // 指定当前轮次（远程控制）
-          setCurrentRound(cmdRound);
+        } else if (cmd === 'setRound' && typeof cmdRound === 'number' && cmdRound >= 1) {
+          // 指定轮次重抽：只覆盖该轮，保留其他轮次数据
+          savedCurrentRoundRef.current = currentRound;
+          overrideRoundAfterDrawRef.current = true;
+          drawingRef.current = false;
+          if (testDataOnRef.current) {
+            // 测试模式：只清除该轮的已中奖 ID
+            const roundWonIds = testRoundWinnersRef.current.get(cmdRound);
+            if (roundWonIds) {
+              const remaining = new Set(testWonIdsRef.current);
+              roundWonIds.forEach((id) => remaining.delete(id));
+              testWonIdsRef.current = remaining;
+              setTestWonIds(remaining);
+              testRoundWinnersRef.current.delete(cmdRound);
+            }
+            testRoundRef.current = cmdRound - 1;
+          } else {
+            // 正式模式：只删除该轮中奖记录，下次抽奖指定轮次号
+            nextDrawRoundRef.current = cmdRound;
+            void api.clearRound(cmdRound);
+          }
+          setCurrentRound(cmdRound - 1);
           if (lotteryStateRef.current !== 'slow') goHome();
         }
       } catch { /* ignore */ }

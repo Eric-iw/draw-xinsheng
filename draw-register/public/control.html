@@ -75,7 +75,7 @@
     <button class="btn btn-red btn-full" id="btn-resetall">重置全部抽奖</button>
   </div>
   <div class="round-input-row">
-    <input type="number" id="round-input" min="0" max="20" placeholder="输入轮次号">
+    <input type="number" id="round-input" min="1" max="20" placeholder="输入轮次号">
     <button id="btn-setround">指定轮次</button>
   </div>
 </div>
@@ -173,7 +173,7 @@
         else if (cmd === 'draw') { state.lotteryState = 'video'; state.videoEnded = false; renderUI(); }
         else if (cmd === 'reset') { state.lotteryState = 'slow'; state.currentRound++; state.revealed = false; state.videoEnded = false; renderUI(); }
         else if (cmd === 'resetAll') { state.lotteryState = 'slow'; state.currentRound = 0; state.revealed = false; state.videoEnded = false; renderUI(); }
-        else if (cmd === 'setRound') { state.currentRound = round; state.lotteryState = 'slow'; renderUI(); }
+        else if (cmd === 'setRound') { state.currentRound = round - 1; state.lotteryState = 'slow'; renderUI(); }
       } else {
         toast(json.msg || '发送失败');
       }
@@ -193,7 +193,7 @@
   };
   btnSetRound.onclick = function() {
     var v = parseInt(roundInput.value, 10);
-    if (isNaN(v) || v < 0 || v > 20) { toast('请输入 0-20 的轮次号'); return; }
+    if (isNaN(v) || v < 1 || v > state.maxRounds) { toast('请输入 1-' + state.maxRounds + ' 的轮次号'); return; }
     sendCmd('setRound', v);
   };
 
