@@ -48,6 +48,7 @@ const btnPrimary =
 const btnDanger =
   'rounded-md border border-red-300 px-3 py-1 text-xs text-red-600 hover:bg-red-50 transition';
 const PAGE_SIZE = 10; // 列表分页每页条数
+const LOTTERY_API_BASE = 'https://draw.inmoyo.cn'.replace(/\/+$/, '');
 
 function fmtTime(s: string): string {
   const d = new Date(s);
@@ -101,6 +102,68 @@ const AdminPage: React.FC = () => {
     const timer = window.setInterval(read, 500);
     return () => window.clearInterval(timer);
   }, [tab]);
+
+  // 远程录入指令轮询 + 执行
+  const lastRegisterCmdTsRef = useRef(0);
+  const registerBusyRef = useRef(false);
+  useEffect(() => {
+    if (!LOTTERY_API_BASE) return;
+    const timer = window.setInterval(async () => {
+      if (registerBusyRef.current) return;
+      try {
+        const res = await fetch(`${LOTTERY_API_BASE}/api/stats`);
+        const json = await res.json();
+        if (json.code !== 0) return;
+        const cmd = json.data?.command;
+        if (!cmd || cmd.cmd !== 'register_all' || cmd.ts <= lastRegisterCmdTsRef.current) return;
+        lastRegisterCmdTsRef.current = cmd.ts;
+        registerBusyRef.current = true;
+        try {
+          const result = await api.registerAllParticipants();
+          await fetch(`${LOTTERY_API_BASE}/api/stats`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'result', result: { affected: result.affected, total: result.total, ts: Date.now() } }),
+          });
+          // 刷新已录入列表
+          api.getParticipants().then(setParticipants).catch(() => {});
+        } catch {
+          await fetch(`${LOTTERY_API_BASE}/api/stats`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'result', result: { affected: 0, total: 0, ts: Date.now(), error: true } }),
+          });
+        } finally {
+          registerBusyRef.current = false;
+        }
+      } catch { /* ignore */ }
+    }, 3000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  // 定期上报录入统计数据供远程控制页显示
+  useEffect(() => {
+    if (!LOTTERY_API_BASE) return;
+    const upload = async () => {
+      try {
+        const [stus, partCount] = await Promise.all([
+          api.getStudents(),
+          api.getParticipantCount(),
+        ]);
+        await fetch(`${LOTTERY_API_BASE}/api/stats`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'stats',
+            stats: { totalStudents: stus.length, registered: partCount, notRegistered: stus.length - partCount },
+          }),
+        });
+      } catch { /* ignore */ }
+    };
+    upload();
+    const timer = window.setInterval(upload, 5000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   // 指定轮次输入
   const [setRoundInput, setSetRoundInput] = useState('');

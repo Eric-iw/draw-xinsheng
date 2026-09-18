@@ -100,6 +100,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 export const api = {
   getParticipants: () => request<ParticipantDTO[]>('/api/participants'),
+  getParticipantCount: () => request<number>('/api/participants/count'),
   // 头像由管理员预置在 uploads/stuimg（命名 姓名-学号），录入时只提交姓名和学号
   createParticipant: (data: { name: string; id_number: string }) =>
     request<ParticipantDTO>('/api/participants', {

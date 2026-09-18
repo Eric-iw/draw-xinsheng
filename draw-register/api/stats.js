@@ -1,20 +1,8 @@
-// Vercel Serverless：录入统计 + 一键全部录入
-// GET  /api/stats — 返回学生库总数、已录入数、未录入数
-// POST /api/stats — 一键全部录入（INSERT IGNORE 幂等）
+// Vercel Serverless：录入控制中转
+// 手机控制页 ↔ 桌面 AdminPage（与 lottery.js 同模式：数据库中转指令+结果）
+// GET  /api/stats — 返回最新的录入统计数据 + 录入指令
+// POST /api/stats — 发送录入指令或上报录入结果/统计数据
 const mysql = require('mysql2/promise');
-let manifest = [];
-try {
-  const loaded = require('../avatars.json');
-  manifest = Array.isArray(loaded) ? loaded : (loaded ? [loaded] : []);
-} catch (e) {
-  manifest = [];
-}
-
-function matchAvatar(name, idNumber) {
-  const prefix = `${name}-${idNumber}.`;
-  const hit = manifest.find((f) => typeof f === 'string' && f.startsWith(prefix));
-  return hit ? `/uploads/stuimg/${hit}` : '/avatar.png';
-}
 
 let pool = null;
 function getPool() {
@@ -35,6 +23,18 @@ function getPool() {
   return pool;
 }
 
+async function getSetting(key) {
+  const [rows] = await getPool().query('SELECT svalue FROM settings WHERE skey = ?', [key]);
+  return rows[0] ? String(rows[0].svalue) : null;
+}
+
+async function setSetting(key, value) {
+  await getPool().query(
+    'INSERT INTO settings (skey, svalue) VALUES (?, ?) ON DUPLICATE KEY UPDATE svalue = VALUES(svalue)',
+    [key, value]
+  );
+}
+
 module.exports = async (req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
@@ -46,40 +46,48 @@ module.exports = async (req, res) => {
 
   try {
     if (req.method === 'GET') {
-      const p = getPool();
-      const [[stuRow], [partRow]] = await Promise.all([
-        p.query('SELECT COUNT(*) AS cnt FROM students'),
-        p.query('SELECT COUNT(*) AS cnt FROM participants'),
+      const [cmdRaw, statsRaw, resultRaw] = await Promise.all([
+        getSetting('register_cmd'),
+        getSetting('register_stats'),
+        getSetting('register_result'),
       ]);
-      const totalStudents = stuRow[0].cnt;
-      const registered = partRow[0].cnt;
       res.json({
         code: 0,
-        data: { totalStudents, registered, notRegistered: totalStudents - registered },
+        data: {
+          command: cmdRaw ? JSON.parse(cmdRaw) : null,
+          stats: statsRaw ? JSON.parse(statsRaw) : null,
+          result: resultRaw ? JSON.parse(resultRaw) : null,
+        },
       });
       return;
     }
 
     if (req.method === 'POST') {
-      const p = getPool();
-      // LEFT JOIN 查出未录入学生
-      const [rows] = await p.query(
-        `SELECT s.name, s.id_number
-         FROM students s
-         LEFT JOIN participants p ON s.id_number = p.id_number
-         WHERE p.id IS NULL`
-      );
-      if (rows.length === 0) {
-        res.json({ code: 0, data: { affected: 0, total: 0 } });
+      const body = req.body || {};
+
+      // action=cmd：控制页发送录入指令
+      if (body.action === 'cmd') {
+        const payload = { cmd: body.cmd, ts: Date.now() };
+        await setSetting('register_cmd', JSON.stringify(payload));
+        res.json({ code: 0, data: { ok: true } });
         return;
       }
-      const values = rows.map((s) => [s.name, s.id_number, matchAvatar(s.name, s.id_number)]);
-      // INSERT IGNORE 幂等
-      const [r] = await p.query(
-        'INSERT IGNORE INTO participants (name, id_number, avatar) VALUES ?',
-        [values]
-      );
-      res.json({ code: 0, data: { affected: r.affectedRows, total: values.length } });
+
+      // action=result：AdminPage 上报录入结果
+      if (body.action === 'result') {
+        await setSetting('register_result', JSON.stringify(body.result));
+        res.json({ code: 0, data: { ok: true } });
+        return;
+      }
+
+      // action=stats：AdminPage 上报录入统计数据
+      if (body.action === 'stats') {
+        await setSetting('register_stats', JSON.stringify(body.stats));
+        res.json({ code: 0, data: { ok: true } });
+        return;
+      }
+
+      res.status(400).json({ code: 1, msg: 'Unknown action' });
       return;
     }
 

@@ -228,6 +228,7 @@
 
   // ---- 录入统计 ----
   var statsAPI = '/api/stats';
+  var lastResultTs = 0;
   var statsBusy = false;
 
   async function pollStats() {
@@ -236,18 +237,36 @@
       var json = await res.json();
       if (json.code === 0) {
         var d = json.data;
-        elRTotal.textContent = d.totalStudents;
-        elRRegistered.textContent = d.registered;
-        elRRemain.textContent = d.notRegistered;
-        if (d.totalStudents > 0) {
-          var pct = Math.round(d.registered / d.totalStudents * 100);
-          elRBar.style.width = pct + '%';
-        }
-        btnRegisterAll.disabled = d.notRegistered === 0;
-        if (d.notRegistered === 0) {
-          btnRegisterAll.textContent = '已全部录入';
+        // 录入统计（由 AdminPage 上报）
+        if (d.stats) {
+          elRTotal.textContent = d.stats.totalStudents;
+          elRRegistered.textContent = d.stats.registered;
+          elRRemain.textContent = d.stats.notRegistered;
+          if (d.stats.totalStudents > 0) {
+            var pct = Math.round(d.stats.registered / d.stats.totalStudents * 100);
+            elRBar.style.width = pct + '%';
+          }
+          if (d.stats.notRegistered === 0) {
+            btnRegisterAll.disabled = true;
+            btnRegisterAll.textContent = '已全部录入';
+          } else {
+            btnRegisterAll.disabled = false;
+            btnRegisterAll.textContent = '一键全部录入（' + d.stats.notRegistered + '人）';
+          }
         } else {
-          btnRegisterAll.textContent = '一键全部录入（' + d.notRegistered + '人）';
+          elRTotal.textContent = '--';
+          elRRegistered.textContent = '--';
+          elRRemain.textContent = '--';
+          btnRegisterAll.disabled = true;
+          btnRegisterAll.textContent = '等待本地服务连接...';
+        }
+        // 录入结果（由 AdminPage 上报）
+        if (d.result && d.result.ts > lastResultTs) {
+          lastResultTs = d.result.ts;
+          elRegResult.style.display = 'block';
+          elRegResult.textContent = '成功录入 ' + d.result.affected + ' 人';
+          toast('录入完成');
+          statsBusy = false;
         }
       }
     } catch (e) { /* ignore */ }
@@ -257,21 +276,24 @@
     if (statsBusy) return;
     statsBusy = true;
     btnRegisterAll.disabled = true;
-    btnRegisterAll.textContent = '录入中...';
+    btnRegisterAll.textContent = '指令发送中...';
+    elRegResult.style.display = 'none';
     try {
-      var res = await fetch(statsAPI, { method: 'POST' });
+      var res = await fetch(statsAPI, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'cmd', cmd: 'register_all' }),
+      });
       var json = await res.json();
       if (json.code === 0) {
-        elRegResult.style.display = 'block';
-        elRegResult.textContent = '成功录入 ' + json.data.affected + ' 人';
-        toast('录入完成');
-        pollStats();
+        btnRegisterAll.textContent = '等待本地执行...';
+        toast('指令已发送，请确保桌面端后台管理页已打开');
       } else {
-        toast(json.msg || '录入失败');
+        toast(json.msg || '发送失败');
+        statsBusy = false;
       }
     } catch (e) {
       toast('网络错误');
-    } finally {
       statsBusy = false;
     }
   };
