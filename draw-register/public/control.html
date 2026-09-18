@@ -33,6 +33,8 @@
   .dot-fast { background: #f59e0b; }
   .dot-video { background: #6366f1; }
   .offline { color: #ef4444; font-size: 12px; }
+  .progress-bar { height: 8px; background: #e5e7eb; border-radius: 4px; margin-top: 10px; overflow: hidden; }
+  .progress-fill { height: 100%; background: #22c55e; border-radius: 4px; transition: width 0.4s; width: 0; }
 </style>
 </head>
 <body>
@@ -56,6 +58,27 @@
     <span class="status-value" id="s-video">播放中</span>
   </div>
   <div id="s-offline" class="offline" style="display:none;margin-top:8px">未连接到首页</div>
+</div>
+
+<div class="card" id="reg-card">
+  <h2>录入情况</h2>
+  <div class="status-row">
+    <span class="status-label">学生库总数</span>
+    <span class="status-value" id="r-total">--</span>
+  </div>
+  <div class="status-row">
+    <span class="status-label">已录入</span>
+    <span class="status-value" id="r-registered" style="color:#22c55e">--</span>
+  </div>
+  <div class="status-row">
+    <span class="status-label">未录入</span>
+    <span class="status-value" id="r-remain">--</span>
+  </div>
+  <div class="progress-bar"><div class="progress-fill" id="r-bar"></div></div>
+  <div class="btn-row" style="margin-top:12px">
+    <button class="btn btn-green btn-full" id="btn-registerall">一键全部录入</button>
+  </div>
+  <div id="reg-result" style="font-size:13px;color:#22c55e;margin-top:8px;display:none"></div>
 </div>
 
 <div class="card">
@@ -102,6 +125,12 @@
   var btnResetAll = document.getElementById('btn-resetall');
   var btnSetRound = document.getElementById('btn-setround');
   var roundInput = document.getElementById('round-input');
+  var btnRegisterAll = document.getElementById('btn-registerall');
+  var elRTotal = document.getElementById('r-total');
+  var elRRegistered = document.getElementById('r-registered');
+  var elRRemain = document.getElementById('r-remain');
+  var elRBar = document.getElementById('r-bar');
+  var elRegResult = document.getElementById('reg-result');
 
   var stateLabels = { slow: '首页跑马灯', fast: '跑马灯加速中', video: '视频播放中' };
   var dotClasses = { slow: 'dot-slow', fast: 'dot-fast', video: 'dot-video' };
@@ -197,10 +226,62 @@
     sendCmd('setRound', v);
   };
 
+  // ---- 录入统计 ----
+  var statsAPI = '/api/stats';
+  var statsBusy = false;
+
+  async function pollStats() {
+    try {
+      var res = await fetch(statsAPI);
+      var json = await res.json();
+      if (json.code === 0) {
+        var d = json.data;
+        elRTotal.textContent = d.totalStudents;
+        elRRegistered.textContent = d.registered;
+        elRRemain.textContent = d.notRegistered;
+        if (d.totalStudents > 0) {
+          var pct = Math.round(d.registered / d.totalStudents * 100);
+          elRBar.style.width = pct + '%';
+        }
+        btnRegisterAll.disabled = d.notRegistered === 0;
+        if (d.notRegistered === 0) {
+          btnRegisterAll.textContent = '已全部录入';
+        } else {
+          btnRegisterAll.textContent = '一键全部录入（' + d.notRegistered + '人）';
+        }
+      }
+    } catch (e) { /* ignore */ }
+  }
+
+  btnRegisterAll.onclick = async function() {
+    if (statsBusy) return;
+    statsBusy = true;
+    btnRegisterAll.disabled = true;
+    btnRegisterAll.textContent = '录入中...';
+    try {
+      var res = await fetch(statsAPI, { method: 'POST' });
+      var json = await res.json();
+      if (json.code === 0) {
+        elRegResult.style.display = 'block';
+        elRegResult.textContent = '成功录入 ' + json.data.affected + ' 人';
+        toast('录入完成');
+        pollStats();
+      } else {
+        toast(json.msg || '录入失败');
+      }
+    } catch (e) {
+      toast('网络错误');
+    } finally {
+      statsBusy = false;
+    }
+  };
+
   // ---- 启动 ----
   renderUI();
   poll();
+  pollStats();
   pollTimer = setInterval(poll, 500);
+  setInterval(pollStats, 3000);
 })();
 </script>
 </body>
