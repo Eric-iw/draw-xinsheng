@@ -90,14 +90,14 @@ export const TopBar: React.FC = () => {
     <>
       <header className="absolute z-20 left-0 right-0 top-0 h-[63px] flex items-center px-[37px] bg-[url('/bg.jpg')] bg-center bg-cover">
         {/* 左侧：扫码录入按钮（s.svg 图标，深色图标反白显示） */}
-        {/* <button
+        <button
           type="button"
           aria-label="扫码录入"
           onClick={() => setShowQR(true)}
           className="flex h-10 w-10 items-center justify-center rounded-lg transition-colors hover:bg-white/15"
         >
           <img src="/s.svg" alt="" draggable={false} className="h-7 w-7 brightness-0 invert" />
-        </button> */}
+        </button>
         <div className="absolute left-1/2 -translate-x-1/2 font-extrabold italic tracking-wide text-[30px] text-white drop-shadow-sm">
           信息安全技术学院 ·  2026级新生见面会
         </div>
@@ -109,7 +109,7 @@ export const TopBar: React.FC = () => {
       </header>
 
       {/* 二维码弹窗：扫码进入录入页 */}
-      {/* {showQR && (
+      {showQR && (
         <div
           className="fixed inset-0 z-[300] flex items-center justify-center bg-black/60"
           onClick={() => setShowQR(false)}
@@ -124,7 +124,7 @@ export const TopBar: React.FC = () => {
             </div>
           </div>
         </div>
-      )} */}
+      )}
     </>
   );
 };
