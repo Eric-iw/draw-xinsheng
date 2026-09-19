@@ -116,6 +116,7 @@ const AdminPage: React.FC = () => {
         if (json.code !== 0) return;
         const cmd = json.data?.command;
         if (!cmd || cmd.cmd !== 'register_all' || cmd.ts <= lastRegisterCmdTsRef.current) return;
+        if (Date.now() - cmd.ts > 5000) { lastRegisterCmdTsRef.current = cmd.ts; return; }
         lastRegisterCmdTsRef.current = cmd.ts;
         registerBusyRef.current = true;
         try {
