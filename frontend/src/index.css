@@ -107,32 +107,16 @@
     }
   }
 
-  /* 无缝向左滚动：translateX(0) → translateX(-50%)，因内容复制了一份，滚完一半正好接上开头 */
+  /* 无缝向左滚动 */
   @keyframes marqueeLeft {
-    0% {
-      transform: translateX(0);
-    }
-    100% {
-      transform: translateX(-50%);
-    }
+    0% { transform: translateX(0); }
+    100% { transform: translateX(-50%); }
   }
 
   /* 无缝向右滚动 */
   @keyframes marqueeRight {
-    0% {
-      transform: translateX(-50%);
-    }
-    100% {
-      transform: translateX(0);
-    }
-  }
-
-  .marquee-left {
-    animation: marqueeLeft linear infinite;
-  }
-
-  .marquee-right {
-    animation: marqueeRight linear infinite;
+    0% { transform: translateX(-50%); }
+    100% { transform: translateX(0); }
   }
 
   /* 3D 透视容器：配合中奖卡片翻转 */

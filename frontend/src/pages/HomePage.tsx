@@ -507,6 +507,15 @@ export const HomePage: React.FC = () => {
           ))}
         </div>
       )}
+
+      {/* ====== 中奖提示 ====== */}
+      {lotteryState === 'video' && revealed && winners.length > 0 && (
+        <div className="pointer-events-none fixed bottom-[24px] inset-x-0 z-[120] flex items-center justify-center">
+          <span className="rounded-full bg-black/50 px-6 py-2 text-[18px] text-white/80 backdrop-blur-sm">
+            如遇照片与姓名不符，以姓名及班级为准
+          </span>
+        </div>
+      )}
     </PageLayout>
   );
 };
